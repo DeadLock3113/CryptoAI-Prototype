@@ -904,9 +904,6 @@ def upload_original():
     
     return render_template('upload.html')
 
-@app.route('/analysis')
-@app.route('/analysis/<int:dataset_id>')
-
 @app.route('/delete_dataset/<int:dataset_id>', methods=['POST'])
 def delete_dataset(dataset_id):
     """Elimina un dataset e tutti i dati associati"""
@@ -938,7 +935,8 @@ def delete_dataset(dataset_id):
         flash(f'Errore durante l\'eliminazione del dataset: {str(e)}', 'danger')
         logger.error(f"Errore durante l'eliminazione del dataset {dataset_id}: {str(e)}")
     
-    return redirect(url_for('analysis'))
+    # Reindirizza alla pagina di analisi
+    return redirect('/analysis')
 
 def analysis(dataset_id=None):
     """Data analysis page"""
