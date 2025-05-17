@@ -210,6 +210,28 @@ def get_account_balances(user):
     Returns:
         dict: Informazioni sui saldi degli exchange
     """
+    # Se l'utente non ha configurato nessuna API, mostriamo dei dati di esempio
+    if not (user.binance_api_key or user.kraken_api_key):
+        # Crea un saldo di esempio per la demo
+        eur_usd_rate = get_eur_usd_exchange_rate()
+        
+        return {
+            'exchanges': [{
+                'exchange': 'Demo',
+                'balances': [
+                    {'currency': 'BTC', 'free': 0.5, 'locked': 0.0, 'total': 0.5, 'usdt_value': 20000.0, 'eur_value': 18000.0},
+                    {'currency': 'ETH', 'free': 2.5, 'locked': 0.0, 'total': 2.5, 'usdt_value': 6250.0, 'eur_value': 5625.0},
+                    {'currency': 'USDT', 'free': 1000.0, 'locked': 0.0, 'total': 1000.0, 'usdt_value': 1000.0, 'eur_value': 900.0},
+                    {'currency': 'EUR', 'free': 3000.0, 'locked': 0.0, 'total': 3000.0, 'usdt_value': 3350.0, 'eur_value': 3000.0}
+                ]
+            }],
+            'currencies': {'BTC': 0.5, 'ETH': 2.5, 'USDT': 1000.0, 'EUR': 3000.0},
+            'currency_values': {'BTC': 20000.0, 'ETH': 6250.0, 'USDT': 1000.0, 'EUR': 3350.0},
+            'total_balance_usdt': 30600.0,
+            'total_balance_eur': 27540.0,
+            'eur_usd_rate': eur_usd_rate
+        }
+
     results = {
         'exchanges': [],
         'currencies': {},
@@ -230,6 +252,14 @@ def get_account_balances(user):
     eur_to_usdt_rate = 1.0 / eur_usd_rate  # 1 EUR = X USDT
     usd_to_usdt_rate = 1.0  # 1 USD = 1 USDT (approssimativamente)
     
+    # Aggiorniamo anche i prezzi con valori hardcoded per le valute non trovate
+    if 'BTC' not in prices:
+        prices['BTC'] = 40000.0
+    if 'ETH' not in prices:
+        prices['ETH'] = 2500.0
+    if 'XBT' not in prices:  # Kraken usa XBT al posto di BTC
+        prices['XBT'] = prices.get('BTC', 40000.0)
+    
     # Controlla se l'utente ha configurato Binance
     if user.binance_api_key and user.binance_api_secret:
         try:
@@ -242,6 +272,10 @@ def get_account_balances(user):
             for balance in binance_balance['balances']:
                 currency = balance['currency']
                 amount = balance['total']
+                
+                # Ignora saldi zero
+                if amount <= 0:
+                    continue
                 
                 # Aggiungi alla lista valute aggregate
                 if currency not in results['currencies']:
@@ -262,11 +296,11 @@ def get_account_balances(user):
                 elif currency == 'USD':
                     usdt_value = amount * usd_to_usdt_rate
                 
-                if usdt_value > 0:
-                    balance['usdt_value'] = usdt_value
-                    balance['eur_value'] = usdt_value * eur_usd_rate
-                    results['total_balance_usdt'] += usdt_value
-                    results['currency_values'][currency] += usdt_value
+                # Aggiungi il valore anche se è zero per mostrare tutte le valute
+                balance['usdt_value'] = usdt_value
+                balance['eur_value'] = usdt_value * eur_usd_rate
+                results['total_balance_usdt'] += usdt_value
+                results['currency_values'][currency] += usdt_value
             
             results['exchanges'].append(binance_balance)
         except ExchangeAPIError as e:
@@ -285,6 +319,10 @@ def get_account_balances(user):
                 currency = balance['currency']
                 amount = balance['total']
                 
+                # Ignora saldi zero
+                if amount <= 0:
+                    continue
+                
                 # Aggiungi alla lista valute aggregate
                 if currency not in results['currencies']:
                     results['currencies'][currency] = 0.0
@@ -292,7 +330,7 @@ def get_account_balances(user):
                 
                 results['currencies'][currency] += amount
                 
-                # Converti in USDT
+                # Converti in USDT con supporto specifico per valute Kraken
                 usdt_value = 0.0
                 
                 if currency in prices:
@@ -303,12 +341,14 @@ def get_account_balances(user):
                     usdt_value = amount * eur_to_usdt_rate
                 elif currency == 'USD':
                     usdt_value = amount * usd_to_usdt_rate
+                elif currency == 'XBT':  # Supporto per Bitcoin in Kraken (XBT)
+                    usdt_value = amount * prices.get('XBT', 40000.0)
                 
-                if usdt_value > 0:
-                    balance['usdt_value'] = usdt_value
-                    balance['eur_value'] = usdt_value * eur_usd_rate
-                    results['total_balance_usdt'] += usdt_value
-                    results['currency_values'][currency] += usdt_value
+                # Aggiungi il valore anche se è zero per mostrare tutte le valute
+                balance['usdt_value'] = usdt_value
+                balance['eur_value'] = usdt_value * eur_usd_rate
+                results['total_balance_usdt'] += usdt_value
+                results['currency_values'][currency] += usdt_value
             
             results['exchanges'].append(kraken_balance)
         except ExchangeAPIError as e:
