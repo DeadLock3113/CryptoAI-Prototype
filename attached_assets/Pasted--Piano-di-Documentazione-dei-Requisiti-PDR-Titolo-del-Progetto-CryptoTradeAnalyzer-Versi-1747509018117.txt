@@ -1,0 +1,169 @@
+📘 Piano di Documentazione dei Requisiti (PDR)
+🏷️ Titolo del Progetto
+CryptoTradeAnalyzer
+
+🧾 Versione
+1.0
+Data: 17 Maggio 2025
+
+1. 📌 Obiettivo del Progetto
+CryptoTradeAnalyzer è un'applicazione Python modulare progettata per l'analisi automatizzata di operazioni di trading su criptovalute. Essa consente il caricamento di dati storici, il calcolo di indicatori tecnici, l'esecuzione di strategie predefinite e la generazione di report analitici, con l'obiettivo di fornire supporto alle decisioni per trader e ricercatori nel campo del trading quantitativo.
+
+2. 👥 Attori Coinvolti
+Attore	Descrizione
+Utente Analista	Interagisce con lo script per eseguire test su dati storici e strategie
+Sviluppatore	Integra nuove strategie, indicatori o migliorie alla struttura modulare
+Data Provider	Fonte dei dati storici (es. file CSV) caricati nel sistema
+
+3. 🔍 Descrizione Generale
+3.1 Funzionalità del Sistema
+Ingestione di dati di mercato da file .csv
+
+Calcolo di indicatori tecnici (RSI, MACD, medie mobili)
+
+Valutazione di strategie di trading su dati storici
+
+Analisi delle performance (profitto, drawdown, win rate)
+
+Generazione di visualizzazioni grafiche
+
+3.2 Requisiti Hardware e Software
+Python 3.8 o superiore
+
+Sistema operativo: compatibile con Linux, macOS, Windows
+
+Librerie necessarie: pandas, numpy, ta, matplotlib
+
+4. 📂 Architettura e Struttura del Progetto
+graphql
+Copia
+Modifica
+CryptoTradeAnalyzer/
+├── main.py                     # Entry point del progetto
+├── data/                       # File CSV con dati storici
+├── indicators/                 # Calcolo degli indicatori tecnici
+│   └── rsi.py, macd.py, etc.
+├── strategies/                 # Strategie di trading personalizzabili
+│   └── crossover_strategy.py
+├── utils/                      # Funzioni di supporto (parser, plotting)
+│   └── plot_results.py
+├── requirements.txt            # Dipendenze
+└── README.md                   # Istruzioni d'uso
+5. 📋 Requisiti Funzionali (RF)
+Codice	Requisito	Descrizione
+RF1	Caricamento Dati	Il sistema deve leggere file .csv contenenti dati OHLCV
+RF2	Calcolo Indicatori	Il sistema deve calcolare indicatori come RSI, MACD, SMA
+RF3	Strategia Trading	Deve essere possibile eseguire strategie su dati storici
+RF4	Analisi Performance	Deve produrre report contenenti metriche come profitto netto
+RF5	Visualizzazione	Deve generare grafici per mostrare segnali e risultati
+RF6	Modularità	Deve consentire facilmente l’aggiunta di nuove strategie
+
+6. 🔒 Requisiti Non Funzionali (RNF)
+Codice	Requisito	Descrizione
+RNF1	Manutenibilità	Il codice deve essere ben strutturato, con moduli separati per ogni funzione
+RNF2	Portabilità	Deve poter essere eseguito in ambienti locali o cloud (es. Replit)
+RNF3	Performance	Deve elaborare almeno 10.000 righe di dati in meno di 10 secondi
+RNF4	Documentazione	Ogni modulo deve contenere docstring e commenti chiari
+RNF5	Compatibilità	Deve funzionare in ambienti Python >=3.8 senza modifiche
+
+7. 📈 Output Attesi
+Grafici: Prezzo con segnali di acquisto/vendita sovrapposti.
+
+Report testuale: Profitto, numero di trade, percentuale di successo.
+
+Log console: Informazioni sul progresso dell’analisi.
+
+8. ▶️ Modalità di Esecuzione su Replit
+8.1 Passaggi:
+Caricare il progetto in una nuova Replit Python repl.
+
+Assicurarsi che il file requirements.txt contenga:
+
+nginx
+Copia
+Modifica
+pandas
+numpy
+matplotlib
+ta
+Eseguire il comando:
+
+bash
+Copia
+Modifica
+python main.py
+Verificare l’output: il programma genererà grafici e log su console.
+
+9. 🔄 Estendibilità
+Il progetto è predisposto per:
+
+Aggiungere nuove strategie in /strategies
+
+Definire nuovi indicatori in /indicators
+
+Collegarsi a fonti dati online (es. API Binance) in futuro
+
+10. 🧪 Testing
+Verifica di corretto calcolo degli indicatori tramite confronto con librerie standard.
+
+Test funzionali per ciascuna strategia su dataset fittizi.
+
+Test di performance su file da 100.000 righe.
+
+11. 🧑‍💻 Autori e Collaboratori
+Nome	Ruolo	Contatto
+[Tuo Nome]	Sviluppatore principale	[email/username Replit]
+ChatGPT	Supporto alla documentazione	OpenAI
+
+12. 📌 Considerazioni Finali
+CryptoTradeAnalyzer è un solido punto di partenza per costruire un framework di backtesting e analisi quantitativa, con struttura estensibile, buon isolamento dei moduli e una curva di apprendimento contenuta per sviluppatori Python intermedi.
+
+Posso generarti questo documento in PDF, Markdown o come file .md da includere nel progetto stesso. Come preferisci procedere?
+
+
+
+
+
+
+
+Hai detto:
+No, però non vedo menzionata la parte di Ai
+
+
+ChatGPT ha detto:
+Hai ragione, nella precedente documentazione non ho incluso dettagli sulle funzionalità di intelligenza artificiale (AI) presenti nel progetto CryptoTradeAnalyzer. Procederò ora a integrare una sezione dedicata all'AI nel Piano di Documentazione dei Requisiti (PDR), evidenziando come l'AI viene utilizzata nel progetto e suggerendo possibili estensioni future.
+
+🤖 13. Integrazione dell'Intelligenza Artificiale (AI)
+13.1 Panoramica
+Il progetto CryptoTradeAnalyzer prevede l'integrazione di moduli di intelligenza artificiale per migliorare l'analisi dei dati di trading e l'efficacia delle strategie implementate. L'obiettivo è sfruttare algoritmi di machine learning per:
+
+Prevedere i movimenti futuri dei prezzi delle criptovalute.
+
+Identificare pattern complessi nei dati storici di mercato.
+
+Ottimizzare le strategie di trading esistenti basandosi su previsioni data-driven.
+
+13.2 Moduli AI Implementati
+Attualmente, il progetto include i seguenti componenti AI:
+
+Modello di Regressione Lineare: Utilizzato per prevedere i prezzi futuri delle criptovalute basandosi su indicatori tecnici calcolati.
+
+Random Forest Regressor: Impiegato per migliorare la precisione delle previsioni rispetto al modello lineare, grazie alla sua capacità di modellare relazioni non lineari nei dati.
+
+Questi modelli sono addestrati su dati storici e utilizzati per generare previsioni che possono informare le decisioni di trading.
+
+13.3 Requisiti AI
+RAI1: Il sistema deve essere in grado di addestrare modelli di machine learning sui dati storici forniti.
+
+RAI2: Le previsioni generate dai modelli devono essere integrate nel processo decisionale delle strategie di trading.
+
+RAI3: Il sistema deve permettere l'aggiunta e la valutazione di diversi algoritmi di machine learning.
+
+13.4 Estensioni Future
+Per potenziare ulteriormente le capacità AI del progetto, si considerano le seguenti estensioni:
+
+Integrazione di Reti Neurali Ricorrenti (RNN): Per modellare sequenze temporali e migliorare le previsioni sui dati di mercato.
+
+Utilizzo di Long Short-Term Memory (LSTM): Per catturare dipendenze a lungo termine nei dati temporali.
+
+Implementazione di modelli di apprendimento per rinforzo: Per sviluppare agenti di trading che apprendono strategie ottimali interagendo con l'ambiente di mercato.
