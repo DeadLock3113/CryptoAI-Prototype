@@ -20,6 +20,7 @@ dependencies = [
     "sqlalchemy>=2.0.41",
     "torchvision>=0.22.0",
     "torch>=2.7.0",
+    "trafilatura>=2.0.0",
 ]
 
 [[tool.uv.index]]

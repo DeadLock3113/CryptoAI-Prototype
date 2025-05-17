@@ -213,11 +213,17 @@ def get_account_balances(user):
     results = {
         'exchanges': [],
         'currencies': {},
-        'total_balance_usdt': 0.0
+        'total_balance_usdt': 0.0,
+        'total_balance_eur': 0.0,
+        'eur_usd_rate': 0.0
     }
     
     # Ottieni prezzi attuali in USDT per la conversione
     prices = get_usdt_prices()
+    
+    # Ottieni tasso di cambio EUR/USD per la conversione
+    eur_usd_rate = get_eur_usd_exchange_rate()
+    results['eur_usd_rate'] = eur_usd_rate
     
     # Controlla se l'utente ha configurato Binance
     if user.binance_api_key and user.binance_api_secret:
@@ -242,9 +248,11 @@ def get_account_balances(user):
                 if currency in prices:
                     usdt_value = amount * prices[currency]
                     balance['usdt_value'] = usdt_value
+                    balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
                 elif currency == 'USDT':
                     balance['usdt_value'] = amount
+                    balance['eur_value'] = amount * eur_usd_rate
                     results['total_balance_usdt'] += amount
             
             results['exchanges'].append(binance_balance)
@@ -274,14 +282,19 @@ def get_account_balances(user):
                 if currency in prices:
                     usdt_value = amount * prices[currency]
                     balance['usdt_value'] = usdt_value
+                    balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
                 elif currency == 'USDT':
                     balance['usdt_value'] = amount
+                    balance['eur_value'] = amount * eur_usd_rate
                     results['total_balance_usdt'] += amount
             
             results['exchanges'].append(kraken_balance)
         except ExchangeAPIError as e:
             logger.error(f"Errore nell'ottenere il saldo Kraken: {str(e)}")
+    
+    # Calcola il saldo totale in EUR
+    results['total_balance_eur'] = results['total_balance_usdt'] * eur_usd_rate
     
     return results
 
@@ -316,3 +329,27 @@ def get_usdt_prices():
     except Exception as e:
         logger.error(f"Errore durante la richiesta dei prezzi: {str(e)}")
         return {}
+        
+def get_eur_usd_exchange_rate():
+    """
+    Ottiene il tasso di cambio EUR/USD corrente.
+    
+    Returns:
+        float: Tasso di cambio EUR/USD (1 USD = X EUR)
+    """
+    try:
+        # Utilizziamo l'API di ExchangeRate-API per ottenere il tasso di cambio
+        response = requests.get('https://open.er-api.com/v6/latest/USD', timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # Ottieni il tasso di cambio EUR
+            eur_rate = data['rates']['EUR']
+            return eur_rate
+        else:
+            logger.error(f"Errore nell'ottenere il tasso di cambio: {response.status_code} - {response.text}")
+            # Valore di fallback se non riusciamo a ottenere il tasso aggiornato
+            return 0.85  # Valore approssimativo EUR/USD
+    except Exception as e:
+        logger.error(f"Errore durante la richiesta del tasso di cambio: {str(e)}")
+        return 0.85  # Valore approssimativo EUR/USD

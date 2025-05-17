@@ -29,7 +29,17 @@
                 <h4 class="my-0">Saldo Account</h4>
             </div>
             <div class="card-body">
-                <h2 class="card-title pricing-card-title">{{ account_balance.total_balance_usdt|round(2) }} <small class="text-muted">USDT</small></h2>
+                <div class="row">
+                    <div class="col-md-6 text-center">
+                        <h5 class="text-muted mb-2">Saldo Totale (USDT)</h5>
+                        <h2 class="card-title pricing-card-title">{{ account_balance.total_balance_usdt|round(2) }} <small class="text-muted">USDT</small></h2>
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <h5 class="text-muted mb-2">Saldo Totale (EUR)</h5>
+                        <h2 class="card-title pricing-card-title">{{ account_balance.total_balance_eur|round(2) }} <small class="text-muted">EUR</small></h2>
+                        <small class="text-muted">Tasso di cambio: 1 USD = {{ account_balance.eur_usd_rate|round(4) }} EUR</small>
+                    </div>
+                </div>
                 
                 {% if account_balance.exchanges %}
                 <div class="mt-3 mb-4">
@@ -49,6 +59,7 @@
                                                     <th>Valuta</th>
                                                     <th>Quantità</th>
                                                     <th>Valore (USDT)</th>
+                                                    <th>Valore (EUR)</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -61,6 +72,15 @@
                                                             {{ account_balance.currency_values[currency]|round(2) }}
                                                         {% elif currency == 'USDT' %}
                                                             {{ amount|round(2) }}
+                                                        {% else %}
+                                                            -
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% if currency in account_balance.currency_values %}
+                                                            {{ (account_balance.currency_values[currency] * account_balance.eur_usd_rate)|round(2) }}
+                                                        {% elif currency == 'USDT' %}
+                                                            {{ (amount * account_balance.eur_usd_rate)|round(2) }}
                                                         {% else %}
                                                             -
                                                         {% endif %}
