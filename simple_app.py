@@ -1809,29 +1809,54 @@ def training_progress(training_id):
                       status=404)
     
     def event_stream():
+        import time
+        
         # Invia un evento iniziale
         yield f"event: connection_established\ndata: {json.dumps({'training_id': training_id})}\n\n"
         
         # Avvia l'addestramento se non è già in esecuzione
         if training_session.status == 'initialized':
+            logger.debug(f"Avvio addestramento per sessione {training_id}")
             training_handler.start_training(training_id)
             yield f"event: training_started\ndata: {json.dumps({'message': 'Addestramento avviato'})}\n\n"
         
         # Memorizza l'ultimo timestamp processato
         last_processed = 0
         
+        # Per debug
+        heartbeat_counter = 0
+        
         # Loop per inviare aggiornamenti
-        while training_session.status in ['initialized', 'running']:
+        while True:
+            # Ricarica la sessione per avere lo stato attuale
+            current_session = training_handler.get_training_session(training_id)
+            if not current_session:
+                logger.error(f"Sessione {training_id} non trovata durante lo streaming")
+                yield f"event: error\ndata: {json.dumps({'message': 'Sessione di addestramento persa'})}\n\n"
+                break
+                
+            # Controlla se l'addestramento è ancora in corso
+            if current_session.status not in ['initialized', 'running']:
+                logger.debug(f"Addestramento terminato con stato: {current_session.status}")
+                break
+                
             # Ottieni nuovi eventi
-            events = training_session.get_events(since=last_processed)
+            events = current_session.get_events(since=last_processed)
             
-            # Invia gli eventi al client
-            for event in events:
-                last_processed = event['timestamp']
-                yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+            if events:
+                # Invia gli eventi al client
+                for event in events:
+                    last_processed = event['timestamp']
+                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                logger.debug(f"Inviati {len(events)} eventi al client")
+            else:
+                # Invia un heartbeat per mantenere aperta la connessione
+                heartbeat_counter += 1
+                if heartbeat_counter % 5 == 0:  # Ogni 5 cicli senza eventi
+                    logger.debug(f"Invio heartbeat #{heartbeat_counter//5}")
+                    yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
             
             # Breve pausa per evitare di sovraccaricare il server
-            import time
             time.sleep(0.5)
         
         # Invia eventi finali se necessario
