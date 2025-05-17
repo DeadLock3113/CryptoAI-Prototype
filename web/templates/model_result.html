@@ -1,0 +1,152 @@
+{% extends "layout.html" %}
+
+{% block title %}Model Results{% endblock %}
+
+{% block page_header %}{{ model_name }} Model Results{% endblock %}
+
+{% block page_description %}
+Evaluation and predictions from your trained machine learning model
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Price Predictions</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <img src="{{ url_for('static', filename=plot_file) }}" class="img-fluid rounded" alt="Model Predictions">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Model Configuration</h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <tbody>
+                        <tr>
+                            <th>Model Type:</th>
+                            <td>{{ model_name }}</td>
+                        </tr>
+                        <tr>
+                            <th>Target Column:</th>
+                            <td>{{ target_column }}</td>
+                        </tr>
+                        <tr>
+                            <th>Sequence Length:</th>
+                            <td>{{ sequence_length }}</td>
+                        </tr>
+                        <tr>
+                            <th>Training Epochs:</th>
+                            <td>{{ epochs }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        {% if metrics %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Performance Metrics</h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <tbody>
+                        {% if metrics.mse is defined %}
+                        <tr>
+                            <th>MSE:</th>
+                            <td>{{ metrics.mse|round(6) }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if metrics.mae is defined %}
+                        <tr>
+                            <th>MAE:</th>
+                            <td>{{ metrics.mae|round(6) }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if metrics.rmse is defined %}
+                        <tr>
+                            <th>RMSE:</th>
+                            <td>{{ metrics.rmse|round(6) }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if metrics.directional_accuracy is defined %}
+                        <tr>
+                            <th>Directional Accuracy:</th>
+                            <td>{{ (metrics.directional_accuracy * 100)|round(2) }}%</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if metrics.rmse_original is defined %}
+                        <tr>
+                            <th>RMSE (Original Scale):</th>
+                            <td>${{ metrics.rmse_original|round(2) }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">
+            <i class="fas fa-lightbulb me-2"></i>
+            Analysis & Insights
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-primary">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Model Performance Analysis</strong>
+            
+            <p class="mt-2 mb-0">
+                {% if metrics and metrics.directional_accuracy and metrics.directional_accuracy > 0.65 %}
+                This model shows excellent directional accuracy of {{ (metrics.directional_accuracy * 100)|round(2) }}%, suggesting it has strong predictive power for price movement direction. This could be valuable for trading signal generation.
+                {% elif metrics and metrics.directional_accuracy and metrics.directional_accuracy > 0.55 %}
+                The model shows decent directional accuracy of {{ (metrics.directional_accuracy * 100)|round(2) }}%, which is better than random chance. This could provide some edge in trading decisions.
+                {% elif metrics and metrics.directional_accuracy %}
+                The model's directional accuracy of {{ (metrics.directional_accuracy * 100)|round(2) }}% suggests limited predictive power. Consider refining the model with additional features or different architectures.
+                {% else %}
+                Review the model's predictions against actual values to assess its performance. Consider both prediction accuracy and directional accuracy when evaluating the model.
+                {% endif %}
+            </p>
+        </div>
+        
+        <div class="mt-3">
+            <h6>Next Steps:</h6>
+            <ul>
+                <li>Use model predictions to enhance trading strategies</li>
+                <li>Consider an ensemble approach combining multiple models</li>
+                <li>Try different feature sets and sequence lengths</li>
+                <li>Implement the model in a backtest to evaluate its trading value</li>
+            </ul>
+            
+            <div class="mt-3 d-flex gap-2">
+                <a href="{{ url_for('models') }}" class="btn btn-primary">
+                    <i class="fas fa-redo me-2"></i>
+                    Train Another Model
+                </a>
+                <a href="{{ url_for('backtest') }}" class="btn btn-success">
+                    <i class="fas fa-sync-alt me-2"></i>
+                    Use in Backtest
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

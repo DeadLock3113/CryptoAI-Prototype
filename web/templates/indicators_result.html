@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+
+{% block title %}Indicator Results{% endblock %}
+
+{% block page_header %}Technical Indicator Results{% endblock %}
+
+{% block page_description %}
+Visualization of calculated technical indicators for your cryptocurrency data
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Calculated Indicators</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-4">
+            <h6>Applied Indicators:</h6>
+            <div class="d-flex flex-wrap">
+                {% for indicator in selected_indicators %}
+                <span class="badge bg-success me-2 mb-2 py-2 px-3">{{ indicator }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Technical indicators have been calculated and stored. You can now use them for backtesting or machine learning models.
+        </div>
+        
+        <div class="d-flex justify-content-between mb-4">
+            <a href="{{ url_for('backtest') }}" class="btn btn-success">
+                <i class="fas fa-sync-alt me-2"></i>
+                Run Backtest with Indicators
+            </a>
+            <a href="{{ url_for('models') }}" class="btn btn-info">
+                <i class="fas fa-brain me-2"></i>
+                Train ML Models with Indicators
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if indicator_plots %}
+<h3 class="mb-4">Indicator Visualizations</h3>
+
+{% for plot in indicator_plots %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">{{ plot.name }}</h5>
+    </div>
+    <div class="card-body">
+        <p class="mb-4">{{ plot.description }}</p>
+        <div class="text-center">
+            <img src="data:image/png;base64,{{ plot.img }}" class="img-fluid rounded" alt="{{ plot.name }}">
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,139 @@
+{% extends "layout.html" %}
+
+{% block title %}Data Analysis{% endblock %}
+
+{% block page_header %}Data Analysis{% endblock %}
+
+{% block page_description %}
+Analyze your cryptocurrency data and view basic statistics
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Price Chart</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid rounded" alt="Price Chart">
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Data Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>File Information</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <th>Filename:</th>
+                                    <td>{{ summary.filename }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Rows:</th>
+                                    <td>{{ summary.rows }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Start Date:</th>
+                                    <td>{{ summary.start }}</td>
+                                </tr>
+                                <tr>
+                                    <th>End Date:</th>
+                                    <td>{{ summary.end }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Available Columns</h6>
+                        <div class="d-flex flex-wrap">
+                            {% for column in summary.columns %}
+                            <span class="badge bg-primary me-2 mb-2 py-2 px-3">{{ column }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>
+                    Price Statistics
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <tbody>
+                        <tr>
+                            <th>Minimum Price:</th>
+                            <td class="text-end">${{ stats.min|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Maximum Price:</th>
+                            <td class="text-end">${{ stats.max|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Average Price:</th>
+                            <td class="text-end">${{ stats.mean|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Standard Deviation:</th>
+                            <td class="text-end">${{ stats.std|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Median Price:</th>
+                            <td class="text-end">${{ stats.median|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Current Price:</th>
+                            <td class="text-end">${{ stats.last|round(2) }}</td>
+                        </tr>
+                        <tr>
+                            <th>Overall Change:</th>
+                            <td class="text-end {% if stats.change > 0 %}text-success{% elif stats.change < 0 %}text-danger{% endif %}">
+                                {{ stats.change|round(2) }}%
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-arrow-right me-2"></i>
+                    Next Steps
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <a href="{{ url_for('indicators') }}" class="btn btn-primary">
+                        <i class="fas fa-chart-line me-2"></i>
+                        Calculate Technical Indicators
+                    </a>
+                    <a href="{{ url_for('backtest') }}" class="btn btn-success">
+                        <i class="fas fa-sync-alt me-2"></i>
+                        Run Backtest
+                    </a>
+                    <a href="{{ url_for('models') }}" class="btn btn-info">
+                        <i class="fas fa-brain me-2"></i>
+                        Train ML Models
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

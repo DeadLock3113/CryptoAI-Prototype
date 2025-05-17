@@ -1,0 +1,165 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Data{% endblock %}
+
+{% block page_header %}Upload Data{% endblock %}
+
+{% block page_description %}
+Upload your cryptocurrency price data in CSV format to begin analysis
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h2 class="card-title mb-4">Upload Data File</h2>
+                
+                <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-center">
+                            <div class="upload-area p-5 text-center border border-secondary rounded mb-3 w-100">
+                                <i class="fas fa-file-csv fa-4x mb-3 text-muted"></i>
+                                <h4>Drag & Drop Files Here</h4>
+                                <p class="text-muted mb-3">or click to browse files</p>
+                                <input type="file" name="file" id="file-input" class="d-none" accept=".csv">
+                                <button type="button" id="browse-btn" class="btn btn-outline-primary">
+                                    <i class="fas fa-folder-open me-2"></i> Browse Files
+                                </button>
+                                <div id="file-name" class="mt-3 text-muted"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary px-4" id="upload-btn" disabled>
+                            <i class="fas fa-upload me-2"></i> Upload Data
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Data Requirements
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>Your CSV file should contain the following columns:</p>
+                <ul class="list-group mb-3">
+                    <li class="list-group-item">
+                        <strong>timestamp</strong> - Date/time of the candle
+                    </li>
+                    <li class="list-group-item">
+                        <strong>open</strong> - Opening price
+                    </li>
+                    <li class="list-group-item">
+                        <strong>high</strong> - Highest price
+                    </li>
+                    <li class="list-group-item">
+                        <strong>low</strong> - Lowest price
+                    </li>
+                    <li class="list-group-item">
+                        <strong>close</strong> - Closing price
+                    </li>
+                    <li class="list-group-item">
+                        <strong>volume</strong> - Trading volume
+                    </li>
+                </ul>
+                <p class="small text-muted">
+                    Note: The system will try to automatically detect and convert columns if they're named differently.
+                </p>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    Tips
+                </h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Make sure your CSV file is properly formatted
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Check for missing values in your data
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Include enough data for meaningful analysis (minimum 100 data points)
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        If possible, use a consistent time interval (e.g., daily, hourly)
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileInput = document.getElementById('file-input');
+        const browseBtn = document.getElementById('browse-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileNameDisplay = document.getElementById('file-name');
+        const uploadArea = document.querySelector('.upload-area');
+        
+        // Click on browse button triggers file input
+        browseBtn.addEventListener('click', function() {
+            fileInput.click();
+        });
+        
+        // File input change event
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files.length > 0) {
+                const fileName = fileInput.files[0].name;
+                fileNameDisplay.textContent = fileName;
+                uploadBtn.disabled = false;
+                uploadArea.classList.add('border-primary');
+            } else {
+                fileNameDisplay.textContent = '';
+                uploadBtn.disabled = true;
+                uploadArea.classList.remove('border-primary');
+            }
+        });
+        
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadArea.classList.add('border-primary');
+        });
+        
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                uploadArea.classList.remove('border-primary');
+            }
+        });
+        
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                const fileName = fileInput.files[0].name;
+                fileNameDisplay.textContent = fileName;
+                uploadBtn.disabled = false;
+            }
+        });
+    });
+</script>
+{% endblock %}

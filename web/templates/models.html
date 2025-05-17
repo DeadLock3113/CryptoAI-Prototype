@@ -1,0 +1,220 @@
+{% extends "layout.html" %}
+
+{% block title %}ML Models{% endblock %}
+
+{% block page_header %}Machine Learning Models{% endblock %}
+
+{% block page_description %}
+Train and evaluate machine learning models for cryptocurrency price prediction
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Model Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('models') }}" method="post">
+                    <div class="mb-4">
+                        <label for="model_type" class="form-label">Select Model Type</label>
+                        <select class="form-select" id="model_type" name="model_type">
+                            {% for model in model_options %}
+                            <option value="{{ model.id }}">{{ model.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="target_column" class="form-label">Target Column</label>
+                            <select class="form-select" id="target_column" name="target_column">
+                                {% for target in target_options %}
+                                <option value="{{ target }}" {% if target == 'close' %}selected{% endif %}>{{ target }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">The price column to predict</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="sequence_length" class="form-label">Sequence Length</label>
+                            <input type="number" class="form-control" id="sequence_length" name="sequence_length" value="60" min="10" max="200">
+                            <div class="form-text">Number of past time steps to use for prediction</div>
+                        </div>
+                    </div>
+                    
+                    <div id="training-params">
+                        <h5 class="mb-3">Training Parameters</h5>
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="epochs" class="form-label">Epochs</label>
+                                <input type="number" class="form-control" id="epochs" name="epochs" value="50" min="10" max="500">
+                                <div class="form-text">Number of training iterations</div>
+                            </div>
+                            <div class="col-md-6" id="network-params">
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" id="use_gpu" name="use_gpu" checked>
+                                    <label class="form-check-label" for="use_gpu">Use GPU Acceleration (if available)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-warning" id="training-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Training may take several minutes</strong> depending on data size and model complexity.
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-brain me-2"></i>
+                            Train Model
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Model Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="model-description">
+                    <h5>LSTM (Long Short-Term Memory)</h5>
+                    <p>LSTM networks are a type of recurrent neural network capable of learning long-term dependencies in sequence data.</p>
+                    
+                    <p>Key features:</p>
+                    <ul>
+                        <li>Specialized memory cells with gates to control information flow</li>
+                        <li>Well-suited for time series prediction</li>
+                        <li>Can capture long-range dependencies in data</li>
+                        <li>Resistant to vanishing/exploding gradient problems</li>
+                    </ul>
+                    
+                    <p>This model is ideal for cryptocurrency price prediction as it can learn complex patterns over time.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    Best Practices
+                </h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Use sufficient historical data (at least 1 year recommended)
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Choose an appropriate sequence length for your time frame
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Include technical indicators as features
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Evaluate model on out-of-sample data
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Consider ensemble methods for improved performance
+                    </li>
+                </ul>
+            </div>
+        </div>
+        
+        {% if has_indicators %}
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>Technical indicators are available</strong> and will be used as features.
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>No technical indicators have been calculated.</strong> Basic indicators will be calculated automatically.
+            <div class="mt-2">
+                <a href="{{ url_for('indicators') }}" class="btn btn-sm btn-primary">
+                    Calculate Indicators
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const modelSelect = document.getElementById('model_type');
+        const modelDescription = document.getElementById('model-description');
+        
+        modelSelect.addEventListener('change', function() {
+            const model = modelSelect.value;
+            
+            // Update model description based on selection
+            if (model === 'lstm') {
+                modelDescription.innerHTML = `
+                    <h5>LSTM (Long Short-Term Memory)</h5>
+                    <p>LSTM networks are a type of recurrent neural network capable of learning long-term dependencies in sequence data.</p>
+                    
+                    <p>Key features:</p>
+                    <ul>
+                        <li>Specialized memory cells with gates to control information flow</li>
+                        <li>Well-suited for time series prediction</li>
+                        <li>Can capture long-range dependencies in data</li>
+                        <li>Resistant to vanishing/exploding gradient problems</li>
+                    </ul>
+                    
+                    <p>This model is ideal for cryptocurrency price prediction as it can learn complex patterns over time.</p>
+                `;
+            } else if (model === 'rnn') {
+                modelDescription.innerHTML = `
+                    <h5>RNN (Recurrent Neural Network / GRU)</h5>
+                    <p>This implementation uses GRU (Gated Recurrent Unit) cells, which are a simpler alternative to LSTM with comparable performance.</p>
+                    
+                    <p>Key features:</p>
+                    <ul>
+                        <li>Simplified architecture with reset and update gates</li>
+                        <li>Faster training compared to LSTM in many cases</li>
+                        <li>Effective for capturing sequential patterns</li>
+                        <li>Well-suited for medium-length dependencies</li>
+                    </ul>
+                    
+                    <p>GRU models can be more efficient while maintaining good predictive power.</p>
+                `;
+            } else if (model === 'ensemble') {
+                modelDescription.innerHTML = `
+                    <h5>Ensemble Model</h5>
+                    <p>Ensemble models combine predictions from multiple models to improve accuracy and robustness.</p>
+                    
+                    <p>Key features:</p>
+                    <ul>
+                        <li>Combines LSTM, RNN, and traditional ML models</li>
+                        <li>Reduces overfitting and improves generalization</li>
+                        <li>More stable predictions across different market conditions</li>
+                        <li>Can capture different patterns that individual models might miss</li>
+                    </ul>
+                    
+                    <p>This approach typically outperforms single models, especially in volatile markets.</p>
+                `;
+            }
+        });
+        
+        // Set initial state
+        modelSelect.dispatchEvent(new Event('change'));
+    });
+</script>
+{% endblock %}

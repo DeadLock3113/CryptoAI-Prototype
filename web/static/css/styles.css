@@ -1,0 +1,137 @@
+/* CryptoTradeAnalyzer Custom Styles */
+
+/* General Styles */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.footer {
+    margin-top: auto;
+}
+
+/* Navigation */
+.navbar-brand {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    border-top-left-radius: 0.5rem !important;
+    border-top-right-radius: 0.5rem !important;
+    font-weight: 600;
+}
+
+/* Form Controls */
+.form-control, .form-select {
+    border-radius: 0.375rem;
+    padding: 0.5rem 1rem;
+}
+
+/* Upload Area */
+.upload-area {
+    border-style: dashed !important;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Chart and Image styles */
+.img-fluid {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.375rem;
+}
+
+/* List Group */
+.list-group-item {
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Alerts */
+.alert {
+    border-radius: 0.375rem;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 0.375rem;
+    padding: 0.5rem 1.25rem;
+}
+
+/* Indicators section */
+.accordion-button:not(.collapsed) {
+    color: var(--bs-primary);
+}
+
+/* Badge styles */
+.badge {
+    border-radius: 0.25rem;
+    font-weight: 500;
+}
+
+/* Make clickable rows more visible */
+tr.clickable {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+tr.clickable:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Utility classes */
+.text-small {
+    font-size: 0.875rem;
+}
+
+.bg-dark-subtle {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Chart price points */
+.chart-point {
+    cursor: crosshair;
+}
+
+/* Loading spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.spinner-container {
+    background-color: var(--bs-dark);
+    padding: 2rem;
+    border-radius: 0.5rem;
+    text-align: center;
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+}

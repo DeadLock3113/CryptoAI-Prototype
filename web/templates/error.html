@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+
+{% block title %}Error{% endblock %}
+
+{% block page_header %}Error {{ error_code }}{% endblock %}
+
+{% block page_description %}
+An error occurred while processing your request
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow-sm">
+            <div class="card-body text-center p-5">
+                <i class="fas fa-exclamation-triangle text-danger fa-5x mb-4"></i>
+                
+                <h2 class="mb-4">Error {{ error_code }}</h2>
+                <p class="lead mb-4">{{ error_message }}</p>
+                
+                <div class="mt-4">
+                    <a href="{{ url_for('index') }}" class="btn btn-primary">
+                        <i class="fas fa-home me-2"></i>
+                        Return to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
