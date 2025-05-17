@@ -1193,26 +1193,51 @@ def models():
     pytorch_available = False
     
     try:
+        import subprocess
         # Try to import PyTorch - better for AMD GPUs with ROCm
         try:
             import torch
             pytorch_available = True
-            gpu_available = torch.cuda.is_available() or hasattr(torch, 'hip') and torch.hip.is_available()
             
-            if gpu_available:
-                if torch.cuda.is_available():
-                    gpu_type = f"NVIDIA GPU: {torch.cuda.get_device_name(0)}"
-                    logger.debug(f"CUDA GPU detected via PyTorch: {gpu_type}")
-                elif hasattr(torch, 'hip') and torch.hip.is_available():
-                    gpu_type = "AMD GPU via ROCm"
-                    logger.debug(f"ROCm GPU detected via PyTorch: {gpu_type}")
-                else:
-                    gpu_type = "GPU sconosciuta"
-                    logger.debug("GPU rilevata ma tipo sconosciuto")
-            else:
-                logger.debug("PyTorch installato ma nessuna GPU rilevata")
+            # Check specifically for AMD GPU with ROCm support
+            gpu_available = False
+            gpu_type = "CPU (nessuna GPU rilevata)"
+            
+            # First check if AMD GPU is present (even without ROCm)
+            try:
+                # Check for AMD GPUs directly using lspci
+                result = subprocess.run(['lspci'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3)
+                if 'AMD' in result.stdout and ('Radeon' in result.stdout or 'GPU' in result.stdout):
+                    gpu_available = True
+                    gpu_type = "AMD Radeon GPU"
+                    logger.debug(f"AMD GPU rilevata tramite lspci")
+            except Exception as e:
+                logger.debug(f"Error checking AMD GPU with lspci: {str(e)}")
+                
+            # Check if PyTorch can access the GPU
+            if torch.cuda.is_available():
+                gpu_available = True
+                gpu_type = f"NVIDIA GPU: {torch.cuda.get_device_name(0)}"
+                logger.debug(f"CUDA GPU detected via PyTorch: {gpu_type}")
+            elif hasattr(torch, 'hip') and torch.hip.is_available():
+                gpu_available = True
+                gpu_type = "AMD GPU via ROCm"
+                logger.debug(f"ROCm GPU detected via PyTorch: {gpu_type}")
+                
+            # Set optimized defaults for AMD GPUs
+            if 'AMD' in gpu_type or 'Radeon' in gpu_type:
+                # Use mixed precision for AMD GPUs for better performance
+                logger.debug("Configurazione ottimizzata per AMD GPU")
+                # If we're using ROCm, we can enable specific optimizations
+                if hasattr(torch, 'hip') and torch.hip.is_available():
+                    # Set ROCm-specific optimizations
+                    torch.backends.cudnn.benchmark = True
+                    logger.debug("ROCm ottimizzazioni abilitate")
+            
+            logger.debug(f"GPU Status: available={gpu_available}, type={gpu_type}")
         except Exception as e:
             logger.debug(f"PyTorch import error: {str(e)}")
+            pytorch_available = False
             
         # Fallback to subprocess check if PyTorch not available
         if not pytorch_available:
@@ -1234,7 +1259,15 @@ def models():
                     gpu_type = "AMD GPU"
                     logger.debug(f"ROCm detected via rocm-smi")
             except:
-                logger.debug("No GPU management tools found")
+                # Final check for AMD GPU
+                try:
+                    result = subprocess.run(['lspci'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3)
+                    if 'AMD' in result.stdout and ('Radeon' in result.stdout or 'GPU' in result.stdout):
+                        gpu_available = True
+                        gpu_type = "AMD Radeon GPU (driver sconosciuto)"
+                        logger.debug(f"AMD GPU rilevata tramite lspci ma driver sconosciuto")
+                except:
+                    logger.debug("No GPU detection tools found")
             
     except Exception as e:
         logger.debug(f"Error during GPU detection: {str(e)}")
@@ -1364,26 +1397,61 @@ def models():
             import torch.optim as optim
             from torch.utils.data import TensorDataset, DataLoader
             
-            # Convert data to PyTorch tensors
+            # Convert data to PyTorch tensors with optimal type
             X_train_tensor = torch.FloatTensor(X_train)
             y_train_tensor = torch.FloatTensor(y_train)
             X_test_tensor = torch.FloatTensor(X_test)
             y_test_tensor = torch.FloatTensor(y_test)
             
-            # Create datasets and dataloaders
+            # Create datasets and dataloaders with optimal settings
             train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
             test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-            test_loader = DataLoader(test_dataset, batch_size=batch_size)
             
-            # Set device (CPU/GPU)
-            device = torch.device("cuda:0" if pytorch_available and torch.cuda.is_available() else 
-                                "mps" if pytorch_available and hasattr(torch, 'mps') and torch.mps.is_available() else
-                                "cpu")
+            # Use multiple workers for data loading if dataset is large enough
+            num_workers = 0
+            pin_memory = False
+            
+            if len(train_dataset) > 1000:
+                num_workers = 2
+                pin_memory = True
+                logger.debug(f"Using optimized data loading with {num_workers} workers")
+            
+            train_loader = DataLoader(
+                train_dataset, 
+                batch_size=batch_size, 
+                shuffle=True, 
+                num_workers=num_workers,
+                pin_memory=pin_memory
+            )
+            
+            test_loader = DataLoader(
+                test_dataset, 
+                batch_size=batch_size, 
+                num_workers=num_workers,
+                pin_memory=pin_memory
+            )
+            
+            # Set device (CPU/GPU) with automatic detection of AMD GPU with ROCm
+            device = torch.device("cpu")  # Default to CPU
+            
+            if pytorch_available:
+                if torch.cuda.is_available():
+                    device = torch.device("cuda:0")
+                    logger.debug("Using NVIDIA CUDA GPU acceleration")
+                elif hasattr(torch, 'hip') and torch.hip.is_available():
+                    device = torch.device("cuda:0")  # ROCm uses the CUDA device namespace
+                    logger.debug("Using AMD ROCm GPU acceleration")
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    device = torch.device("mps")
+                    logger.debug("Using Apple Metal GPU acceleration")
+                elif gpu_available and ('AMD' in gpu_type or 'Radeon' in gpu_type):
+                    logger.debug("AMD GPU detected but ROCm not available. Using CPU with optimized settings.")
+                    # Enable as many optimizations as possible even on CPU
+                    torch.set_num_threads(4)  # Use multiple CPU threads
             
             logger.debug(f"Using device: {device}")
             
-            # Build model
+            # Build model with optimized settings
             model, model_name = build_model(model_type, lookback)
             
             if model is None:
@@ -1393,9 +1461,20 @@ def models():
             # Move model to device    
             model = model.to(device)
             
-            # Define loss function and optimizer
+            # Define optimization components with settings tuned for better convergence
             criterion = nn.MSELoss()
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
+            
+            # Use more sophisticated optimizer settings based on dataset size
+            lr = 0.001
+            weight_decay = 0
+            
+            if len(X_train) > 5000:
+                # For larger datasets, use slower learning rate with decay
+                lr = 0.0005
+                weight_decay = 1e-5
+                logger.debug("Using optimized learning parameters for large dataset")
+            
+            optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
             
             # Training history to store loss values
             history = {'loss': [], 'val_loss': []}
