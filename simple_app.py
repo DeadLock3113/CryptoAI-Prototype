@@ -523,7 +523,21 @@ def profile():
     # Get user's datasets
     datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
     
-    return render_template('profile.html', datasets=datasets, backtests=[], models=[])
+    # Pass user's API keys and Telegram settings to the template
+    api_settings = {
+        'binance_api_key': user.binance_api_key or '',
+        'binance_api_secret': user.binance_api_secret or '',
+        'kraken_api_key': user.kraken_api_key or '',
+        'kraken_api_secret': user.kraken_api_secret or '',
+        'telegram_bot_token': user.telegram_bot_token or '',
+        'telegram_chat_id': user.telegram_chat_id or ''
+    }
+    
+    return render_template('profile.html', 
+                          datasets=datasets, 
+                          backtests=[], 
+                          models=[], 
+                          api_settings=api_settings)
 
 @app.route('/change_password', methods=['POST'])
 def change_password():

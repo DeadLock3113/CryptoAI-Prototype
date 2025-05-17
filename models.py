@@ -19,6 +19,16 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Credenziali API exchange
+    binance_api_key = db.Column(db.String(256), nullable=True)
+    binance_api_secret = db.Column(db.String(256), nullable=True)
+    kraken_api_key = db.Column(db.String(256), nullable=True)
+    kraken_api_secret = db.Column(db.String(256), nullable=True)
+    
+    # Credenziali Telegram per notifiche
+    telegram_bot_token = db.Column(db.String(256), nullable=True)
+    telegram_chat_id = db.Column(db.String(64), nullable=True)
+    
     # Relationships
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
     strategies = db.relationship('Strategy', backref='user', lazy='dynamic')
