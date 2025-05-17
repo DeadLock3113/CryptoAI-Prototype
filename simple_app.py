@@ -19,6 +19,7 @@ import json
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -78,6 +79,41 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Initialize database
 db = SQLAlchemy(app)
 
+# Funzione per aggiornare lo schema del database
+def update_database_schema():
+    """Aggiorna lo schema del database con le nuove colonne."""
+    with app.app_context():
+        # Controlla se le colonne sono già presenti
+        inspector = inspect(db.engine)
+        user_columns = [col['name'] for col in inspector.get_columns('user')]
+        
+        # Aggiungi le colonne mancanti
+        missing_columns = []
+        if 'binance_api_key' not in user_columns:
+            missing_columns.append('binance_api_key VARCHAR(256)')
+        if 'binance_api_secret' not in user_columns:
+            missing_columns.append('binance_api_secret VARCHAR(256)')
+        if 'kraken_api_key' not in user_columns:
+            missing_columns.append('kraken_api_key VARCHAR(256)')
+        if 'kraken_api_secret' not in user_columns:
+            missing_columns.append('kraken_api_secret VARCHAR(256)')
+        if 'telegram_bot_token' not in user_columns:
+            missing_columns.append('telegram_bot_token VARCHAR(256)')
+        if 'telegram_chat_id' not in user_columns:
+            missing_columns.append('telegram_chat_id VARCHAR(256)')
+        
+        # Esegui l'ALTER TABLE se ci sono colonne mancanti
+        if missing_columns:
+            for column_def in missing_columns:
+                try:
+                    sql = text(f"ALTER TABLE user ADD COLUMN {column_def}")
+                    with db.engine.connect() as conn:
+                        conn.execute(sql)
+                        conn.commit()
+                except Exception as e:
+                    print(f"Errore nell'aggiungere la colonna {column_def}: {str(e)}")
+            print("Schema database aggiornato con successo.")
+
 # Cache in-memory per migliorare le performance
 _memory_cache = {}
 
@@ -129,6 +165,8 @@ class Dataset(db.Model):
 # Create database tables
 with app.app_context():
     db.create_all()
+    # Esegui l'aggiornamento dello schema per aggiungere le nuove colonne
+    update_database_schema()
 
 # Helper functions
 def get_current_user():
@@ -366,28 +404,54 @@ def profile():
         return redirect(url_for('login', next=request.url))
     
     if request.method == 'POST':
-        # Update user information
-        username = request.form['username']
-        email = request.form['email']
+        # Controlla il tipo di form inviato
+        form_type = request.form.get('form_type', 'user_info')
         
-        # Check if username or email is already taken (by another user)
-        if username != user.username and User.query.filter_by(username=username).first():
-            flash('Username già in uso. Scegli un altro username.', 'danger')
-            return redirect(url_for('profile'))
+        if form_type == 'api_settings':
+            # Aggiorna le impostazioni API
             
-        if email != user.email and User.query.filter_by(email=email).first():
-            flash('Email già registrata. Utilizza un\'altra email.', 'danger')
-            return redirect(url_for('profile'))
+            # API Binance
+            user.binance_api_key = request.form.get('binance_api_key', '')
+            user.binance_api_secret = request.form.get('binance_api_secret', '')
             
-        # Update user
-        user.username = username
-        user.email = email
-        
-        # Save changes
-        db.session.commit()
-        
-        # Update session
-        session['username'] = username
+            # API Kraken
+            user.kraken_api_key = request.form.get('kraken_api_key', '')
+            user.kraken_api_secret = request.form.get('kraken_api_secret', '')
+            
+            # Impostazioni Telegram
+            user.telegram_bot_token = request.form.get('telegram_bot_token', '')
+            user.telegram_chat_id = request.form.get('telegram_chat_id', '')
+            
+            # Salva le modifiche
+            db.session.commit()
+            
+            flash('Impostazioni API aggiornate con successo!', 'success')
+            
+        else:
+            # Aggiorna le informazioni utente
+            username = request.form['username']
+            email = request.form['email']
+            
+            # Check if username or email is already taken (by another user)
+            if username != user.username and User.query.filter_by(username=username).first():
+                flash('Username già in uso. Scegli un altro username.', 'danger')
+                return redirect(url_for('profile'))
+                
+            if email != user.email and User.query.filter_by(email=email).first():
+                flash('Email già registrata. Utilizza un\'altra email.', 'danger')
+                return redirect(url_for('profile'))
+                
+            # Update user
+            user.username = username
+            user.email = email
+            
+            # Save changes
+            db.session.commit()
+            
+            # Update session
+            session['username'] = username
+            
+            flash('Informazioni utente aggiornate con successo!', 'success')
         
         flash('Profilo aggiornato con successo!', 'success')
         return redirect(url_for('profile'))
