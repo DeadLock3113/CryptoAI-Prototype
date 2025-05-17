@@ -147,6 +147,7 @@ class User(db.Model):
     
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
     notification_settings = db.relationship('NotificationSettings', backref='user', uselist=False, cascade='all, delete-orphan')
+    api_profiles = db.relationship('ApiProfile', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
     def is_authenticated(self):
         return True
@@ -171,6 +172,18 @@ class NotificationSettings(db.Model):
     volume_change_threshold = db.Column(db.Float, default=20.0)  # Percentuale di cambio del volume
     
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+
+class ApiProfile(db.Model):
+    """Modello per i profili delle API degli exchange"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    data = db.Column(db.JSON, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    def __repr__(self):
+        return f'<ApiProfile {self.name}>'
 
 class Dataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -3213,6 +3226,129 @@ def send_price_notification(symbol, alert_type):
         flash(f'Errore nell\'invio della notifica: {str(e)}', 'danger')
     
     return redirect(url_for('index'))
+
+@app.route('/api/save-profile', methods=['POST'])
+def save_api_profile():
+    """Salva un profilo di API keys"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'message': 'Utente non autenticato'})
+    
+    try:
+        data = request.json
+        if not data or 'name' not in data or 'data' not in data:
+            return jsonify({'success': False, 'message': 'Dati richiesti mancanti'})
+        
+        profile_name = data['name'].strip()
+        profile_data = data['data']
+        
+        if not profile_name:
+            return jsonify({'success': False, 'message': 'Nome profilo non valido'})
+        
+        # Verifica se esiste già un profilo con questo nome
+        existing_profile = ApiProfile.query.filter_by(
+            user_id=user.id,
+            name=profile_name
+        ).first()
+        
+        if existing_profile:
+            # Aggiorna il profilo esistente
+            existing_profile.data = profile_data
+            existing_profile.created_at = datetime.utcnow()
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Profilo aggiornato con successo'})
+        else:
+            # Crea un nuovo profilo
+            new_profile = ApiProfile(
+                name=profile_name,
+                data=profile_data,
+                user_id=user.id
+            )
+            db.session.add(new_profile)
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Profilo salvato con successo'})
+    
+    except Exception as e:
+        logger.error(f"Errore nel salvataggio del profilo API: {str(e)}")
+        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
+
+@app.route('/api/get-profiles', methods=['GET'])
+def get_api_profiles():
+    """Recupera tutti i profili API dell'utente"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'message': 'Utente non autenticato'})
+    
+    try:
+        profiles = ApiProfile.query.filter_by(user_id=user.id).order_by(ApiProfile.created_at.desc()).all()
+        profiles_list = [{'id': p.id, 'name': p.name, 'created_at': p.created_at.strftime('%d/%m/%Y %H:%M')} 
+                         for p in profiles]
+        
+        return jsonify({
+            'success': True, 
+            'profiles': profiles_list
+        })
+    
+    except Exception as e:
+        logger.error(f"Errore nel recupero dei profili API: {str(e)}")
+        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
+
+@app.route('/api/get-profile/<int:profile_id>', methods=['GET'])
+def get_api_profile(profile_id):
+    """Recupera un profilo API specifico"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'message': 'Utente non autenticato'})
+    
+    try:
+        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
+        
+        if not profile:
+            return jsonify({'success': False, 'message': 'Profilo non trovato'})
+        
+        return jsonify({
+            'success': True,
+            'profile': {
+                'id': profile.id,
+                'name': profile.name,
+                'data': profile.data,
+                'created_at': profile.created_at.strftime('%d/%m/%Y %H:%M')
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"Errore nel recupero del profilo API: {str(e)}")
+        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
+
+@app.route('/api/delete-profile/<int:profile_id>', methods=['DELETE'])
+def delete_api_profile(profile_id):
+    """Elimina un profilo API specifico"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'message': 'Utente non autenticato'})
+    
+    try:
+        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
+        
+        if not profile:
+            return jsonify({'success': False, 'message': 'Profilo non trovato'})
+        
+        db.session.delete(profile)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Profilo eliminato con successo'})
+    
+    except Exception as e:
+        logger.error(f"Errore nell'eliminazione del profilo API: {str(e)}")
+        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
 
 @app.context_processor
 def inject_globals():
