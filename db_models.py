@@ -19,13 +19,39 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # API keys
+    binance_api_key = db.Column(db.String(256))
+    binance_api_secret = db.Column(db.String(256))
+    kraken_api_key = db.Column(db.String(256))
+    kraken_api_secret = db.Column(db.String(256))
+    
+    # Telegram settings
+    telegram_bot_token = db.Column(db.String(256))
+    telegram_chat_id = db.Column(db.String(64))
+    
     # Relationships
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
     strategies = db.relationship('Strategy', backref='user', lazy='dynamic')
     backtests = db.relationship('Backtest', backref='user', lazy='dynamic')
+    api_profiles = db.relationship('ApiProfile', backref='user', lazy='dynamic',
+                               cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<User {self.username}>'
+
+
+class ApiProfile(db.Model):
+    """API profile model for storing exchange API keys"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    data = db.Column(db.JSON, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Foreign keys
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    def __repr__(self):
+        return f'<ApiProfile {self.name}>'
 
 class Dataset(db.Model):
     """Cryptocurrency dataset model"""
