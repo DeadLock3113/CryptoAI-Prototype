@@ -663,7 +663,8 @@ def fetch_exchange_data():
                 start_time=start_date,
                 end_time=end_date,
                 api_key=api_key,
-                api_secret=api_secret
+                api_secret=api_secret,
+                fallback_to_sample=True
             )
             
             # Verifica che ci siano dati
