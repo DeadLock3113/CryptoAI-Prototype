@@ -315,7 +315,45 @@ def generate_price_chart(data, symbol, resolution='full'):
 @app.route('/')
 def index():
     """Home page"""
-    return render_template('index.html')
+    user = get_current_user()
+    
+    account_balance = None
+    notification_settings = None
+    user_has_telegram = False
+    
+    if user:
+        # Verifica se l'utente ha configurato le notifiche Telegram
+        user_has_telegram = bool(user.telegram_bot_token and user.telegram_chat_id)
+        
+        # Ottieni le impostazioni di notifica dell'utente
+        notification_settings = NotificationSettings.query.filter_by(user_id=user.id).first()
+        
+        # Se non esistono impostazioni, creale con valori predefiniti
+        if not notification_settings:
+            notification_settings = NotificationSettings(
+                user_id=user.id,
+                timeframe='1h',
+                enabled=False
+            )
+            db.session.add(notification_settings)
+            db.session.commit()
+        
+        # Tenta di ottenere il saldo dell'account dagli exchange configurati
+        if user.binance_api_key or user.kraken_api_key:
+            try:
+                # Ottieni il saldo degli account
+                account_balance = get_account_balances(user)
+            except ExchangeAPIError as e:
+                flash(f'Errore nel recuperare il saldo dell\'account: {str(e)}', 'danger')
+                logger.error(f"Errore API exchange per l'utente {user.id}: {str(e)}")
+    
+    return render_template(
+        'index.html', 
+        current_user=user,
+        account_balance=account_balance,
+        notification_settings=notification_settings,
+        user_has_telegram=user_has_telegram
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
