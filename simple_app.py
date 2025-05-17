@@ -2430,6 +2430,714 @@ def server_error(e):
     logger.error(f"Server error: {str(e)}")
     return render_template('500.html'), 500
 
+
+@app.route('/sentiment_analysis')
+@app.route('/sentiment_analysis/<int:dataset_id>')
+def sentiment_analysis(dataset_id=None):
+    """Pagina per l'analisi del sentiment"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Ottieni tutti i dataset dell'utente per il menu dropdown
+    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
+    
+    # Se non è specificato un dataset_id e l'utente ha dataset, usa il primo
+    if dataset_id is None and user_datasets:
+        dataset_id = user_datasets[0].id
+    
+    selected_dataset = None
+    sentiment_chart = None
+    sentiment_summary = None
+    sentiment_data_id = None
+    recent_news = []
+    date_range = {"start": None, "end": None}
+    news_count = 0
+    
+    if dataset_id:
+        # Ottieni il dataset selezionato
+        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
+        
+        # Controlla se esiste già un'analisi del sentiment per questo dataset
+        sentiment_data = SentimentData.query.filter_by(dataset_id=dataset_id, user_id=user.id).first()
+        
+        if sentiment_data:
+            # Usa i dati esistenti
+            sentiment_data_dict = sentiment_data.data
+            sentiment_data_id = sentiment_data.id
+            
+            # Estrai le informazioni necessarie
+            sentiment_chart = sentiment_data_dict.get('chart', None)
+            sentiment_summary = sentiment_data_dict.get('summary', {})
+            recent_news = sentiment_data_dict.get('recent_news', [])
+            date_range = sentiment_data_dict.get('date_range', {"start": None, "end": None})
+            news_count = sentiment_data_dict.get('news_count', 0)
+        else:
+            # Crea una nuova analisi del sentiment
+            try:
+                # Carica i dati del dataset
+                df = load_dataset(selected_dataset)
+                
+                # Estrai le date di inizio e fine
+                start_date = df.index.min().to_pydatetime() if not df.empty else datetime.now() - timedelta(days=30)
+                end_date = df.index.max().to_pydatetime() if not df.empty else datetime.now()
+                date_range = {"start": start_date.strftime('%d/%m/%Y'), "end": end_date.strftime('%d/%m/%Y')}
+                
+                # Genera dati di esempio per le notizie (simulazione)
+                # In un'implementazione reale, questi dati dovrebbero provenire da un'API o da un crawler
+                news_data = generate_sample_news_data(
+                    symbol=selected_dataset.symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    count=20
+                )
+                news_count = len(news_data)
+                
+                # Analizza il sentiment
+                analyzer = SentimentAnalyzer(use_vader=True, use_textblob=True)
+                
+                # Analizza il sentiment dei titoli delle notizie
+                sentiment_results = analyzer.analyze_dataframe(news_data, 'title', 'date')
+                
+                # Genera il grafico del sentiment
+                sentiment_chart = analyzer.generate_sentiment_chart(
+                    sentiment_results, 
+                    f"Sentiment Analysis - {selected_dataset.symbol}"
+                )
+                
+                # Genera il riepilogo del sentiment
+                sentiment_summary = analyzer.summarize_sentiment(sentiment_results)
+                
+                # Prepara le notizie recenti per la visualizzazione
+                recent_news = []
+                for _, row in news_data.sort_values('date', ascending=False).head(10).iterrows():
+                    sentiment_score = float(row['sentiment'])
+                    _, color = analyzer.get_sentiment_colors(sentiment_score)
+                    label = analyzer.get_sentiment_label(sentiment_score)
+                    
+                    recent_news.append({
+                        "date": row['date'].strftime('%d/%m/%Y'),
+                        "title": row['title'],
+                        "sentiment_score": sentiment_score,
+                        "sentiment_label": label,
+                        "sentiment_color": color
+                    })
+                
+                # Salva i dati del sentiment nel database
+                new_sentiment_data = SentimentData(
+                    dataset_id=dataset_id,
+                    user_id=user.id,
+                    data={
+                        'chart': sentiment_chart,
+                        'summary': sentiment_summary,
+                        'recent_news': recent_news,
+                        'date_range': date_range,
+                        'news_count': news_count
+                    }
+                )
+                db.session.add(new_sentiment_data)
+                db.session.commit()
+                
+                sentiment_data_id = new_sentiment_data.id
+                
+                logger.info(f"Nuova analisi del sentiment creata per il dataset {dataset_id}")
+                
+            except Exception as e:
+                logger.error(f"Errore durante l'analisi del sentiment: {str(e)}")
+                flash(f'Errore durante l\'analisi del sentiment: {str(e)}', 'danger')
+    
+    return render_template('sentiment_analysis.html',
+                          user_datasets=user_datasets,
+                          selected_dataset=selected_dataset,
+                          sentiment_chart=sentiment_chart,
+                          sentiment_summary=sentiment_summary,
+                          recent_news=recent_news,
+                          sentiment_data_id=sentiment_data_id,
+                          date_range=date_range,
+                          news_count=news_count)
+
+
+@app.route('/update_sentiment/<int:dataset_id>', methods=['POST'])
+def update_sentiment(dataset_id):
+    """Aggiorna l'analisi del sentiment per un dataset"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({"success": False, "message": "Utente non autenticato."}), 401
+    
+    # Ottieni il dataset
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+    if not dataset:
+        return jsonify({"success": False, "message": "Dataset non trovato."}), 404
+    
+    try:
+        # Carica i dati del dataset
+        df = load_dataset(dataset)
+        
+        # Estrai le date di inizio e fine
+        start_date = df.index.min().to_pydatetime() if not df.empty else datetime.now() - timedelta(days=30)
+        end_date = df.index.max().to_pydatetime() if not df.empty else datetime.now()
+        date_range = {"start": start_date.strftime('%d/%m/%Y'), "end": end_date.strftime('%d/%m/%Y')}
+        
+        # Genera nuovi dati di esempio per le notizie
+        news_data = generate_sample_news_data(
+            symbol=dataset.symbol,
+            start_date=start_date,
+            end_date=end_date,
+            count=25  # Incrementiamo il numero di notizie per avere più dati
+        )
+        news_count = len(news_data)
+        
+        # Analizza il sentiment
+        analyzer = SentimentAnalyzer(use_vader=True, use_textblob=True)
+        
+        # Analizza il sentiment dei titoli delle notizie
+        sentiment_results = analyzer.analyze_dataframe(news_data, 'title', 'date')
+        
+        # Genera il grafico del sentiment
+        sentiment_chart = analyzer.generate_sentiment_chart(
+            sentiment_results, 
+            f"Sentiment Analysis - {dataset.symbol} (Aggiornato)"
+        )
+        
+        # Genera il riepilogo del sentiment
+        sentiment_summary = analyzer.summarize_sentiment(sentiment_results)
+        
+        # Prepara le notizie recenti per la visualizzazione
+        recent_news = []
+        for _, row in news_data.sort_values('date', ascending=False).head(10).iterrows():
+            sentiment_score = float(row['sentiment'])
+            _, color = analyzer.get_sentiment_colors(sentiment_score)
+            label = analyzer.get_sentiment_label(sentiment_score)
+            
+            recent_news.append({
+                "date": row['date'].strftime('%d/%m/%Y'),
+                "title": row['title'],
+                "sentiment_score": sentiment_score,
+                "sentiment_label": label,
+                "sentiment_color": color
+            })
+        
+        # Aggiorna o crea i dati del sentiment nel database
+        sentiment_data = SentimentData.query.filter_by(dataset_id=dataset_id, user_id=user.id).first()
+        
+        if sentiment_data:
+            # Aggiorna i dati esistenti
+            sentiment_data.data = {
+                'chart': sentiment_chart,
+                'summary': sentiment_summary,
+                'recent_news': recent_news,
+                'date_range': date_range,
+                'news_count': news_count
+            }
+            sentiment_data.updated_at = datetime.utcnow()
+        else:
+            # Crea nuovi dati
+            sentiment_data = SentimentData(
+                dataset_id=dataset_id,
+                user_id=user.id,
+                data={
+                    'chart': sentiment_chart,
+                    'summary': sentiment_summary,
+                    'recent_news': recent_news,
+                    'date_range': date_range,
+                    'news_count': news_count
+                }
+            )
+            db.session.add(sentiment_data)
+        
+        db.session.commit()
+        
+        return jsonify({
+            "success": True, 
+            "message": "Analisi del sentiment aggiornata con successo.",
+            "sentiment_data_id": sentiment_data.id
+        })
+    
+    except Exception as e:
+        logger.error(f"Errore durante l'aggiornamento dell'analisi del sentiment: {str(e)}")
+        return jsonify({"success": False, "message": f"Errore: {str(e)}"}), 500
+
+
+@app.route('/custom_strategy')
+@app.route('/custom_strategy/<int:dataset_id>')
+def custom_strategy(dataset_id=None):
+    """Pagina per le strategie di trading personalizzate"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Ottieni tutti i dataset dell'utente per il menu dropdown
+    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
+    
+    # Se non è specificato un dataset_id e l'utente ha dataset, usa il primo
+    if dataset_id is None and user_datasets:
+        dataset_id = user_datasets[0].id
+    
+    selected_dataset = None
+    selected_strategy = None
+    strategy_chart = None
+    strategy_stats = None
+    user_strategies = []
+    
+    # Controlla se viene richiesta la visualizzazione di una strategia
+    strategy_id = request.args.get('strategy_id', None, type=int)
+    
+    # Ottieni i tipi di strategia disponibili
+    available_strategies = [
+        {
+            "type": "MovingAverageCrossStrategy",
+            "name": "Incrocio Medie Mobili",
+            "description": "Strategia basata sull'incrocio di medie mobili",
+            "parameters": {
+                "short_window": {
+                    "name": "Periodo Media Breve",
+                    "description": "Periodo per la media mobile breve",
+                    "type": "int",
+                    "default": 20,
+                    "min": 5,
+                    "max": 50
+                },
+                "long_window": {
+                    "name": "Periodo Media Lunga",
+                    "description": "Periodo per la media mobile lunga",
+                    "type": "int",
+                    "default": 50,
+                    "min": 20,
+                    "max": 200
+                },
+                "ma_type": {
+                    "name": "Tipo Media Mobile",
+                    "description": "Tipo di media mobile da utilizzare",
+                    "type": "select",
+                    "options": ["SMA", "EMA", "WMA"],
+                    "default": "SMA"
+                }
+            }
+        },
+        {
+            "type": "BollingerBandsStrategy",
+            "name": "Bande di Bollinger",
+            "description": "Strategia basata sulle bande di Bollinger",
+            "parameters": {
+                "window": {
+                    "name": "Periodo",
+                    "description": "Periodo per il calcolo delle bande",
+                    "type": "int",
+                    "default": 20,
+                    "min": 10,
+                    "max": 50
+                },
+                "num_std": {
+                    "name": "Deviazioni Standard",
+                    "description": "Numero di deviazioni standard per le bande",
+                    "type": "float",
+                    "default": 2.0,
+                    "min": 1.0,
+                    "max": 3.0,
+                    "step": 0.1
+                }
+            }
+        },
+        {
+            "type": "RSIStrategy",
+            "name": "RSI (Relative Strength Index)",
+            "description": "Strategia basata sull'indicatore RSI",
+            "parameters": {
+                "window": {
+                    "name": "Periodo RSI",
+                    "description": "Periodo per il calcolo dell'RSI",
+                    "type": "int",
+                    "default": 14,
+                    "min": 7,
+                    "max": 30
+                },
+                "overbought": {
+                    "name": "Soglia Ipercomprato",
+                    "description": "Livello RSI considerato ipercomprato",
+                    "type": "int",
+                    "default": 70,
+                    "min": 60,
+                    "max": 90
+                },
+                "oversold": {
+                    "name": "Soglia Ipervenduto",
+                    "description": "Livello RSI considerato ipervenduto",
+                    "type": "int",
+                    "default": 30,
+                    "min": 10,
+                    "max": 40
+                }
+            }
+        },
+        {
+            "type": "SentimentBasedStrategy",
+            "name": "Strategia Basata sul Sentiment",
+            "description": "Strategia che utilizza l'analisi del sentiment per generare segnali di trading",
+            "parameters": {
+                "positive_threshold": {
+                    "name": "Soglia Positiva",
+                    "description": "Soglia del sentiment per segnali di acquisto",
+                    "type": "float",
+                    "default": 0.3,
+                    "min": 0.1,
+                    "max": 0.7,
+                    "step": 0.05
+                },
+                "negative_threshold": {
+                    "name": "Soglia Negativa",
+                    "description": "Soglia del sentiment per segnali di vendita",
+                    "type": "float",
+                    "default": -0.3,
+                    "min": -0.7,
+                    "max": -0.1,
+                    "step": 0.05
+                },
+                "trend_weight": {
+                    "name": "Peso del Trend",
+                    "description": "Peso da assegnare al trend di prezzo (vs sentiment)",
+                    "type": "float",
+                    "default": 0.5,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.1
+                }
+            }
+        }
+    ]
+    
+    if dataset_id:
+        # Ottieni il dataset selezionato
+        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
+        
+        # Ottieni le strategie dell'utente
+        user_strategies = CustomStrategyModel.query.filter_by(user_id=user.id).all()
+        
+        # Se viene richiesta la visualizzazione di una specifica strategia
+        if strategy_id:
+            selected_strategy = CustomStrategyModel.query.filter_by(id=strategy_id, user_id=user.id).first()
+            
+            if selected_strategy:
+                try:
+                    # Carica i dati del dataset
+                    df = load_dataset(selected_dataset)
+                    
+                    # Crea un'istanza della strategia
+                    strategy_type = selected_strategy.strategy_type
+                    strategy = CustomStrategyBuilder.create_strategy(
+                        strategy_type=strategy_type,
+                        name=selected_strategy.name,
+                        description=selected_strategy.description,
+                        parameters=selected_strategy.parameters
+                    )
+                    
+                    # Genera i segnali
+                    signals = strategy.generate_signals(df)
+                    
+                    # Crea il grafico della strategia
+                    # (Questa parte andrebbe implementata in modo più completo in un'applicazione reale)
+                    plt.figure(figsize=(12, 6))
+                    plt.plot(df.index, df['close'], label='Prezzo')
+                    
+                    # Aggiungi i segnali di acquisto e vendita
+                    buy_signals = df.index[signals == TradingSignal.BUY]
+                    sell_signals = df.index[signals == TradingSignal.SELL]
+                    
+                    plt.scatter(buy_signals, df.loc[buy_signals, 'close'], marker='^', color='green', s=100, label='Acquisto')
+                    plt.scatter(sell_signals, df.loc[sell_signals, 'close'], marker='v', color='red', s=100, label='Vendita')
+                    
+                    plt.title(f"Segnali di Trading - {selected_strategy.name} su {selected_dataset.symbol}")
+                    plt.xlabel('Data')
+                    plt.ylabel('Prezzo')
+                    plt.legend()
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Converti il grafico in base64
+                    buffer = io.BytesIO()
+                    plt.savefig(buffer, format='png', bbox_inches='tight')
+                    buffer.seek(0)
+                    strategy_chart = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                    plt.close()
+                    
+                    # Calcola le statistiche
+                    buy_signals_count = (signals == TradingSignal.BUY).sum()
+                    sell_signals_count = (signals == TradingSignal.SELL).sum()
+                    hold_signals_count = (signals == TradingSignal.HOLD).sum()
+                    
+                    last_signal = "Nessuno"
+                    if len(signals) > 0:
+                        last_signal_value = signals.iloc[-1]
+                        if last_signal_value == TradingSignal.BUY:
+                            last_signal = "Acquisto"
+                        elif last_signal_value == TradingSignal.SELL:
+                            last_signal = "Vendita"
+                        elif last_signal_value == TradingSignal.HOLD:
+                            last_signal = "Attesa"
+                    
+                    strategy_stats = {
+                        "buy_signals": buy_signals_count,
+                        "sell_signals": sell_signals_count,
+                        "hold_signals": hold_signals_count,
+                        "total_signals": len(signals),
+                        "last_signal": last_signal
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Errore durante la generazione del grafico della strategia: {str(e)}")
+                    flash(f'Errore durante la generazione del grafico della strategia: {str(e)}', 'danger')
+    
+    # Prepara il JSON per le strategie disponibili
+    available_strategies_json = json.dumps(available_strategies)
+    
+    return render_template('custom_strategy.html',
+                          user_datasets=user_datasets,
+                          selected_dataset=selected_dataset,
+                          available_strategies=available_strategies,
+                          available_strategies_json=available_strategies_json,
+                          user_strategies=user_strategies,
+                          selected_strategy=selected_strategy,
+                          strategy_chart=strategy_chart,
+                          strategy_stats=strategy_stats)
+
+
+@app.route('/create_strategy', methods=['POST'])
+def create_strategy():
+    """Crea una nuova strategia personalizzata"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    try:
+        dataset_id = request.form.get('dataset_id', None, type=int)
+        name = request.form.get('name', '')
+        description = request.form.get('description', '')
+        strategy_type = request.form.get('strategy_type', '')
+        
+        # Controlla i dati di input
+        if not name or not strategy_type:
+            flash('Nome e tipo di strategia sono obbligatori.', 'danger')
+            return redirect(url_for('custom_strategy', dataset_id=dataset_id))
+        
+        # Ottieni i parametri dal form
+        parameters = {}
+        for key, value in request.form.items():
+            if key.startswith('parameters[') and key.endswith(']'):
+                param_name = key[11:-1]  # Estrai il nome del parametro
+                
+                # Converti il valore nel tipo appropriato
+                try:
+                    param_value = float(value)
+                    # Se è un intero, converti in int
+                    if param_value.is_integer():
+                        param_value = int(param_value)
+                except ValueError:
+                    # Se non è un numero, lascialo come stringa
+                    param_value = value
+                
+                parameters[param_name] = param_value
+        
+        # Crea l'istanza della strategia
+        new_strategy = CustomStrategyModel(
+            name=name,
+            description=description,
+            strategy_type=strategy_type,
+            parameters=parameters,
+            user_id=user.id,
+            dataset_id=dataset_id
+        )
+        
+        # Se un dataset è specificato, testa la strategia per calcolare le metriche
+        if dataset_id:
+            dataset = Dataset.query.get(dataset_id)
+            if dataset:
+                df = load_dataset(dataset)
+                
+                # Crea un'istanza della strategia per il test
+                strategy = CustomStrategyBuilder.create_strategy(
+                    strategy_type=strategy_type,
+                    name=name,
+                    description=description,
+                    parameters=parameters
+                )
+                
+                # Genera i segnali
+                signals = strategy.generate_signals(df)
+                
+                # Calcola le metriche di performance
+                # Nota: qui utilizziamo una versione semplificata, in un'applicazione reale
+                # si dovrebbe utilizzare un sistema di backtesting più completo
+                price_changes = df['close'].pct_change().shift(-1)
+                
+                # Accuratezza
+                correct_signals = ((signals == TradingSignal.BUY) & (price_changes > 0)) | \
+                                 ((signals == TradingSignal.SELL) & (price_changes < 0)) | \
+                                 ((signals == TradingSignal.HOLD) & (abs(price_changes) < 0.005))
+                
+                accuracy = correct_signals.mean() if len(correct_signals) > 0 else 0.0
+                
+                # Simula trading
+                position = 0  # 0 = no position, 1 = long, -1 = short
+                trades = []
+                entry_price = 0
+                
+                for i, signal in enumerate(signals):
+                    if i >= len(df) - 1:
+                        break
+                        
+                    current_price = df['close'].iloc[i]
+                    next_price = df['close'].iloc[i+1]
+                    
+                    if signal == TradingSignal.BUY and position <= 0:
+                        # Chiudi short se presente
+                        if position == -1:
+                            trades.append(entry_price - current_price)
+                        
+                        # Apri long
+                        position = 1
+                        entry_price = current_price
+                        
+                    elif signal == TradingSignal.SELL and position >= 0:
+                        # Chiudi long se presente
+                        if position == 1:
+                            trades.append(current_price - entry_price)
+                        
+                        # Apri short
+                        position = -1
+                        entry_price = current_price
+                
+                # Calcola win rate e profit factor
+                if trades:
+                    winning_trades = [t for t in trades if t > 0]
+                    win_rate = len(winning_trades) / len(trades) if trades else 0
+                    
+                    # Profit factor
+                    total_profit = sum(winning_trades) if winning_trades else 0
+                    total_loss = abs(sum([t for t in trades if t < 0])) if any(t < 0 for t in trades) else 1
+                    profit_factor = total_profit / total_loss if total_loss > 0 else 0
+                    
+                    # Sharpe ratio (semplificato)
+                    returns = [t / entry_price for t in trades]
+                    mean_return = sum(returns) / len(returns) if returns else 0
+                    std_return = np.std(returns) if len(returns) > 1 else 1
+                    sharpe_ratio = mean_return / std_return if std_return > 0 else 0
+                else:
+                    win_rate = 0
+                    profit_factor = 0
+                    sharpe_ratio = 0
+                
+                # Aggiorna le metriche della strategia
+                new_strategy.accuracy = float(accuracy)
+                new_strategy.win_rate = float(win_rate)
+                new_strategy.profit_factor = float(profit_factor)
+                new_strategy.sharpe_ratio = float(sharpe_ratio)
+        
+        # Salva la strategia nel database
+        db.session.add(new_strategy)
+        db.session.commit()
+        
+        flash(f'Strategia "{name}" creata con successo.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Errore durante la creazione della strategia: {str(e)}")
+        flash(f'Errore durante la creazione della strategia: {str(e)}', 'danger')
+    
+    return redirect(url_for('custom_strategy', dataset_id=dataset_id))
+
+
+@app.route('/optimize_strategy', methods=['POST'])
+def optimize_strategy():
+    """Ottimizza una strategia esistente con tecniche di IA"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        return jsonify({"success": False, "message": "Utente non autenticato."}), 401
+    
+    # Ottieni i dati dalla richiesta
+    data = request.json
+    strategy_id = data.get('strategy_id')
+    dataset_id = data.get('dataset_id')
+    
+    if not strategy_id or not dataset_id:
+        return jsonify({"success": False, "message": "Parametri mancanti."}), 400
+    
+    # Ottieni la strategia e il dataset
+    strategy = CustomStrategyModel.query.filter_by(id=strategy_id, user_id=user.id).first()
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+    
+    if not strategy or not dataset:
+        return jsonify({"success": False, "message": "Strategia o dataset non trovato."}), 404
+    
+    try:
+        # Carica i dati del dataset
+        df = load_dataset(dataset)
+        
+        # Crea un'istanza della strategia originale
+        original_strategy = CustomStrategyBuilder.create_strategy(
+            strategy_type=strategy.strategy_type,
+            name=strategy.name,
+            description=strategy.description,
+            parameters=strategy.parameters
+        )
+        
+        # Crea l'ottimizzatore di strategie
+        optimizer = StrategyOptimizer(
+            data=df,
+            strategy=original_strategy,
+            train_test_split=0.7,
+            population_size=20,
+            generations=10,
+            mutation_rate=0.2,
+            crossover_rate=0.7
+        )
+        
+        # Ottimizza la strategia
+        optimized_strategy, improvements, is_improved = optimizer.optimize()
+        
+        # Se la strategia è migliorata, aggiorna il database
+        if is_improved:
+            # Salva i parametri ottimizzati
+            strategy.parameters = optimized_strategy.parameters
+            strategy.updated_at = datetime.utcnow()
+            
+            # Aggiorna le metriche di performance
+            original_performance = optimizer.original_performance
+            best_performance = optimizer._evaluate_strategy(optimized_strategy, optimizer.test_data)
+            
+            strategy.accuracy = float(best_performance.get('accuracy', 0.0))
+            strategy.profit_factor = float(best_performance.get('profit_factor', 0.0))
+            strategy.sharpe_ratio = float(best_performance.get('sharpe_ratio', 0.0))
+            strategy.win_rate = float(best_performance.get('win_rate', 0.0))
+            
+            db.session.commit()
+            
+            # Prepara il messaggio di miglioramento
+            improvement_msg = "<ul>"
+            for metric, value in improvements.items():
+                formatted_value = round(value, 2)
+                improvement_msg += f"<li><strong>{metric.capitalize()}:</strong> {'+' if formatted_value > 0 else ''}{formatted_value}%</li>"
+            improvement_msg += "</ul>"
+            
+            return jsonify({
+                "success": True,
+                "message": f"La strategia è stata ottimizzata con successo! Miglioramenti:{improvement_msg}"
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "message": "Nessun miglioramento significativo trovato. La strategia originale è già ottimale."
+            })
+        
+    except Exception as e:
+        logger.error(f"Errore durante l'ottimizzazione della strategia: {str(e)}")
+        return jsonify({"success": False, "message": f"Errore durante l'ottimizzazione: {str(e)}"}), 500
+
 @app.route('/update_notification_settings', methods=['POST'])
 def update_notification_settings():
     """Aggiorna le impostazioni di notifica dell'utente"""

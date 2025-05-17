@@ -8,33 +8,38 @@ sulle criptovalute.
 Author: CryptoTradeAnalyzer Team
 """
 
-import os
+import io
+import base64
+import random
+import logging
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import base64
-import io
-import json
-import random
 from datetime import datetime, timedelta
-from textblob import TextBlob
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
-import nltk
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, Any, Optional, List, Tuple
 
-# Assicurati che NLTK abbia i dati necessari
+# NLTK
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+# Ensure the VADER lexicon is downloaded
 try:
-    nltk.data.find('vader_lexicon')
+    nltk.data.find('sentiment/vader_lexicon.zip')
 except LookupError:
     nltk.download('vader_lexicon')
 
+# TextBlob
+from textblob import TextBlob
+
+# Configurazione del logger
+logger = logging.getLogger(__name__)
 
 class SentimentAnalyzer:
     """
     Classe per l'analisi del sentiment dei dati di mercato e delle notizie.
     Utilizza diverse tecniche di NLP e combina i risultati.
     """
-
+    
     def __init__(self, use_vader: bool = True, use_textblob: bool = True):
         """
         Inizializza l'analizzatore di sentiment.
@@ -46,90 +51,10 @@ class SentimentAnalyzer:
         self.use_vader = use_vader
         self.use_textblob = use_textblob
         
-        if use_vader:
+        # Inizializza gli analizzatori di sentiment
+        if self.use_vader:
             self.vader = SentimentIntensityAnalyzer()
         
-        # Dizionario di termini specifici per il dominio crypto
-        self.crypto_lexicon = {
-            'hodl': 3.0,
-            'moon': 2.5,
-            'dump': -2.0,
-            'fud': -2.5,
-            'shill': -1.5,
-            'bullish': 3.0,
-            'bearish': -3.0,
-            'rally': 2.0,
-            'correction': -1.5,
-            'profit': 2.0,
-            'loss': -2.0,
-            'gain': 2.0,
-            'crash': -3.0,
-            'surge': 2.5,
-            'plummet': -2.5,
-            'to the moon': 3.0,
-            'diamond hands': 2.0,
-            'paper hands': -1.5,
-            'rekt': -2.5,
-            'bagholder': -2.0,
-            'buy the dip': 1.5,
-            'sell the news': -1.0,
-            'whale': 0.0,  # neutral by itself
-            'fomo': -1.0,
-            'leverage': 0.0,  # neutral by itself
-            'liquidation': -2.5,
-            'long': 1.0,
-            'short': -1.0,
-            'position': 0.0,  # neutral by itself
-            'squeeze': 0.0,  # can be positive or negative depending on context
-            'institutional': 1.5,
-            'adoption': 2.5,
-            'regulation': -1.0,
-            'ban': -3.0,
-            'legal': 1.0,
-            'illegal': -2.5,
-            'whitepaper': 0.5,
-            'roadmap': 1.0,
-            'rugpull': -3.5,
-            'scam': -3.5,
-            'hack': -3.0,
-            'security': 1.5,
-            'vulnerability': -2.0,
-            'upgrade': 2.0,
-            'downtime': -2.0,
-            'mainnet': 2.0,
-            'testnet': 0.5,
-            'fork': 0.0,  # neutral by itself
-            'halving': 1.5,
-            'mining': 0.5,
-            'proof of work': 0.0,
-            'proof of stake': 0.5,
-            'smart contract': 1.0,
-            'defi': 1.5,
-            'nft': 0.5,
-            'meme coin': -0.5,
-            'altcoin': 0.0,
-            'shitcoin': -3.0,
-            'ico': -0.5,
-            'airdrop': 1.0,
-            'staking': 1.5,
-            'yield farming': 1.0,
-            'liquidity': 1.0,
-            'volume': 0.5,
-            'market cap': 0.0,
-            'momentum': 0.5,
-            'resistance': -0.5,
-            'support': 0.5,
-            'breakout': 2.0,
-            'breakdown': -2.0,
-            'overbought': -1.0,
-            'oversold': 1.0,
-            'golden cross': 2.5,
-            'death cross': -2.5,
-            'fib': 0.0,
-            'macd': 0.0,
-            'rsi': 0.0
-        }
-    
     def analyze_text(self, text: str) -> Dict[str, Any]:
         """
         Analizza il sentiment di un testo.
@@ -140,60 +65,56 @@ class SentimentAnalyzer:
         Returns:
             Dizionario con i risultati dell'analisi
         """
-        if not text or text.strip() == "":
-            return {"compound": 0.0, "positive": 0.0, "negative": 0.0, "neutral": 1.0}
+        results = {
+            'text': text,
+            'compound': 0.0,
+            'positive': 0.0,
+            'negative': 0.0,
+            'neutral': 0.0
+        }
         
-        scores = {"compound": 0.0, "positive": 0.0, "negative": 0.0, "neutral": 0.0}
-        methods_count = 0
-        
-        # Analisi con VADER
+        # Analisi VADER
         if self.use_vader:
             vader_scores = self.vader.polarity_scores(text)
             
-            # Aggiungi contributo dei termini specifici per crypto
-            compound_adjustment = 0.0
-            text_lower = text.lower()
-            
-            for term, score in self.crypto_lexicon.items():
-                if term in text_lower:
-                    # Il contributo è pesato in base alla lunghezza del testo
-                    weight = min(1.0, 5.0 / (len(text.split()) + 1))
-                    compound_adjustment += score * weight * 0.1
-            
-            # Limita l'aggiustamento per evitare valori fuori scala
-            compound_adjustment = max(-0.5, min(0.5, compound_adjustment))
-            vader_scores['compound'] = max(-1.0, min(1.0, vader_scores['compound'] + compound_adjustment))
-            
-            for key in scores:
-                scores[key] += vader_scores[key]
-            
-            methods_count += 1
+            # Aggiorna i risultati con i punteggi VADER
+            for key, value in vader_scores.items():
+                if key != 'compound':
+                    # Normalizza i punteggi
+                    results[key] = value
+                else:
+                    # Il punteggio compound è già normalizzato
+                    results[key] = value
         
-        # Analisi con TextBlob
+        # Analisi TextBlob
         if self.use_textblob:
             blob = TextBlob(text)
             polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
             
-            # Convertiamo la polarità di TextBlob nel formato di VADER
-            textblob_scores = {
-                "compound": polarity,
-                "positive": max(0, polarity) * subjectivity,
-                "negative": max(0, -polarity) * subjectivity,
-                "neutral": (1 - subjectivity)
-            }
+            # TextBlob fornisce un punteggio di polarità tra -1 e 1
+            # Convertiamo in un formato simile a VADER per coerenza
+            if polarity > 0:
+                textblob_positive = polarity
+                textblob_negative = 0.0
+            else:
+                textblob_positive = 0.0
+                textblob_negative = abs(polarity)
+                
+            textblob_neutral = 1.0 - (textblob_positive + textblob_negative)
             
-            for key in scores:
-                scores[key] += textblob_scores[key]
-            
-            methods_count += 1
+            # Se utilizziamo entrambi gli analizzatori, facciamo una media
+            if self.use_vader:
+                results['compound'] = (results['compound'] + polarity) / 2
+                results['positive'] = (results['positive'] + textblob_positive) / 2
+                results['negative'] = (results['negative'] + textblob_negative) / 2
+                results['neutral'] = (results['neutral'] + textblob_neutral) / 2
+            else:
+                results['compound'] = polarity
+                results['positive'] = textblob_positive
+                results['negative'] = textblob_negative
+                results['neutral'] = textblob_neutral
         
-        # Media dei risultati
-        if methods_count > 0:
-            for key in scores:
-                scores[key] /= methods_count
-        
-        return scores
+        return results
     
     def analyze_dataframe(self, df: pd.DataFrame, text_column: str, date_column: Optional[str] = None) -> pd.DataFrame:
         """
@@ -207,26 +128,25 @@ class SentimentAnalyzer:
         Returns:
             DataFrame con i risultati dell'analisi
         """
-        results = []
+        # Crea una copia del DataFrame
+        result_df = df.copy()
         
-        for _, row in df.iterrows():
-            text = row[text_column]
-            sentiment = self.analyze_text(text)
-            
-            result = {
-                'text': text,
-                'compound': sentiment['compound'],
-                'positive': sentiment['positive'],
-                'negative': sentiment['negative'],
-                'neutral': sentiment['neutral']
-            }
-            
-            if date_column and date_column in row:
-                result['date'] = row[date_column]
-            
-            results.append(result)
+        # Analizza il sentiment per ogni riga
+        sentiment_results = []
+        for text in df[text_column]:
+            sentiment_results.append(self.analyze_text(text))
         
-        return pd.DataFrame(results)
+        # Aggiungi i risultati al DataFrame
+        result_df['sentiment'] = [result['compound'] for result in sentiment_results]
+        result_df['sentiment_positive'] = [result['positive'] for result in sentiment_results]
+        result_df['sentiment_negative'] = [result['negative'] for result in sentiment_results]
+        result_df['sentiment_neutral'] = [result['neutral'] for result in sentiment_results]
+        
+        # Ordina per data se specificata
+        if date_column and date_column in df.columns:
+            result_df = result_df.sort_values(by=date_column)
+        
+        return result_df
     
     def get_sentiment_colors(self, compound_score: float) -> Tuple[str, str]:
         """
@@ -239,15 +159,15 @@ class SentimentAnalyzer:
             Tupla (codice colore, nome colore)
         """
         if compound_score >= 0.5:
-            return '#28a745', 'success'  # verde forte
+            return '#28a745', 'success'  # Verde intenso
         elif compound_score >= 0.05:
-            return '#5cb85c', 'success'  # verde
-        elif compound_score > -0.05:
-            return '#6c757d', 'secondary'  # grigio
-        elif compound_score > -0.5:
-            return '#dc3545', 'danger'  # rosso
+            return '#5cb85c', 'success-light'  # Verde chiaro
+        elif compound_score <= -0.5:
+            return '#dc3545', 'danger'  # Rosso intenso
+        elif compound_score <= -0.05:
+            return '#f8d7da', 'danger-light'  # Rosso chiaro
         else:
-            return '#bd2130', 'danger'  # rosso forte
+            return '#6c757d', 'neutral'  # Grigio
     
     def get_sentiment_label(self, compound_score: float) -> str:
         """
@@ -263,12 +183,12 @@ class SentimentAnalyzer:
             return 'Molto Positivo'
         elif compound_score >= 0.05:
             return 'Positivo'
-        elif compound_score > -0.05:
-            return 'Neutrale'
-        elif compound_score > -0.5:
+        elif compound_score <= -0.5:
+            return 'Molto Negativo'
+        elif compound_score <= -0.05:
             return 'Negativo'
         else:
-            return 'Molto Negativo'
+            return 'Neutro'
     
     def get_simplified_sentiment(self, compound_score: float) -> str:
         """
@@ -280,12 +200,12 @@ class SentimentAnalyzer:
         Returns:
             Etichetta semplificata
         """
-        if compound_score >= 0.25:
+        if compound_score >= 0.05:
             return 'Positivo'
-        elif compound_score <= -0.25:
+        elif compound_score <= -0.05:
             return 'Negativo'
         else:
-            return 'Neutrale'
+            return 'Neutro'
     
     def generate_sentiment_chart(self, sentiment_data: pd.DataFrame, title: str = "Analisi del Sentiment") -> str:
         """
@@ -298,57 +218,54 @@ class SentimentAnalyzer:
         Returns:
             Immagine del grafico codificata in base64
         """
+        # Configura il grafico
         plt.figure(figsize=(12, 6))
         
-        # Ordina per data se presente
+        # Se c'è una colonna 'date', usa come indice
         if 'date' in sentiment_data.columns:
-            sentiment_data = sentiment_data.sort_values('date')
             x = sentiment_data['date']
         else:
             x = range(len(sentiment_data))
         
-        # Plot principale per il sentiment composto
-        plt.plot(x, sentiment_data['compound'], color='blue', linewidth=2)
+        # Grafico del sentiment
+        plt.plot(x, sentiment_data['sentiment'], marker='o', linestyle='-', color='blue', label='Sentiment')
         
-        # Aree colorate per positivo e negativo
-        plt.fill_between(x, sentiment_data['compound'], 0, 
-                         where=(sentiment_data['compound'] > 0), 
-                         color='green', alpha=0.3)
-        plt.fill_between(x, sentiment_data['compound'], 0, 
-                         where=(sentiment_data['compound'] < 0), 
-                         color='red', alpha=0.3)
+        # Aggiungi linee orizzontali per le soglie
+        plt.axhline(y=0.05, color='green', linestyle='--', alpha=0.5, label='Soglia Positiva')
+        plt.axhline(y=-0.05, color='red', linestyle='--', alpha=0.5, label='Soglia Negativa')
         
-        # Linea dello zero
-        plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+        # Colorazione delle aree
+        plt.fill_between(range(len(sentiment_data)), 0.05, 1, alpha=0.1, color='green')
+        plt.fill_between(range(len(sentiment_data)), -0.05, 0.05, alpha=0.1, color='gray')
+        plt.fill_between(range(len(sentiment_data)), -1, -0.05, alpha=0.1, color='red')
         
-        # Linee tratteggiate per le soglie di sentiment
-        plt.axhline(y=0.05, color='green', linestyle='--', alpha=0.5)
-        plt.axhline(y=-0.05, color='red', linestyle='--', alpha=0.5)
-        
-        # Formattazione
+        # Aggiungi titolo e etichette
         plt.title(title, fontsize=16)
-        plt.ylabel('Sentiment Score', fontsize=12)
-        
-        if 'date' in sentiment_data.columns:
-            plt.xlabel('Data', fontsize=12)
-            plt.gcf().autofmt_xdate()  # Ruota le etichette della data
-        else:
-            plt.xlabel('Elemento', fontsize=12)
-        
+        plt.xlabel('Data')
+        plt.ylabel('Sentiment Score')
+        plt.ylim(-1, 1)
         plt.grid(True, alpha=0.3)
+        plt.legend()
+        
+        # Ruota le etichette delle date
+        if 'date' in sentiment_data.columns:
+            plt.xticks(rotation=45)
+        
         plt.tight_layout()
         
         # Converti il grafico in immagine base64
         buffer = io.BytesIO()
         plt.savefig(buffer, format='png', bbox_inches='tight')
         buffer.seek(0)
+        
         image_png = buffer.getvalue()
         buffer.close()
         
-        # Pulisci la figura di matplotlib
+        graphic = base64.b64encode(image_png).decode('utf-8')
+        
         plt.close()
         
-        return base64.b64encode(image_png).decode('utf-8')
+        return graphic
     
     def summarize_sentiment(self, sentiment_data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -360,72 +277,58 @@ class SentimentAnalyzer:
         Returns:
             Dizionario con il riepilogo
         """
-        if len(sentiment_data) == 0:
-            return {
-                "score": 0.0,
-                "label": "Neutrale",
-                "simplified": "Neutrale",
-                "color": "secondary",
-                "interpretation": "Nessun dato disponibile per l'analisi"
-            }
+        # Calcola statistiche di base
+        mean_sentiment = sentiment_data['sentiment'].mean()
+        max_sentiment = sentiment_data['sentiment'].max()
+        min_sentiment = sentiment_data['sentiment'].min()
         
-        # Calcola il sentiment medio
-        avg_compound = sentiment_data['compound'].mean()
+        # Calcola la percentuale di sentiment positivo, negativo e neutro
+        positive_count = (sentiment_data['sentiment'] >= 0.05).sum()
+        negative_count = (sentiment_data['sentiment'] <= -0.05).sum()
+        neutral_count = ((sentiment_data['sentiment'] > -0.05) & (sentiment_data['sentiment'] < 0.05)).sum()
+        total_count = len(sentiment_data)
         
-        # Determina l'etichetta e il colore
-        _, color = self.get_sentiment_colors(avg_compound)
-        label = self.get_sentiment_label(avg_compound)
-        simplified = self.get_simplified_sentiment(avg_compound)
+        positive_pct = (positive_count / total_count) * 100 if total_count > 0 else 0
+        negative_pct = (negative_count / total_count) * 100 if total_count > 0 else 0
+        neutral_pct = (neutral_count / total_count) * 100 if total_count > 0 else 0
         
-        # Calcola la tendenza recente se ci sono abbastanza dati
-        trend_direction = None
-        trend_strength = None
-        
-        if len(sentiment_data) >= 5 and 'date' in sentiment_data.columns:
-            recent_data = sentiment_data.sort_values('date').tail(5)
-            oldest_avg = recent_data.head(2)['compound'].mean()
-            newest_avg = recent_data.tail(2)['compound'].mean()
-            
-            trend_change = newest_avg - oldest_avg
-            
-            if abs(trend_change) < 0.05:
-                trend_direction = "stabile"
-                trend_strength = "molto bassa"
-            else:
-                trend_direction = "in crescita" if trend_change > 0 else "in calo"
-                
-                if abs(trend_change) < 0.15:
-                    trend_strength = "bassa"
-                elif abs(trend_change) < 0.3:
-                    trend_strength = "moderata"
-                else:
-                    trend_strength = "alta"
-        
-        # Genera una interpretazione del sentiment
-        if avg_compound >= 0.5:
-            interpretation = "estremamente positivo, suggerendo un forte ottimismo nel mercato"
-        elif avg_compound >= 0.25:
-            interpretation = "generalmente positivo, con un buon livello di ottimismo"
-        elif avg_compound >= 0.05:
-            interpretation = "leggermente positivo, con cauto ottimismo"
-        elif avg_compound > -0.05:
-            interpretation = "neutrale, senza una chiara direzione"
-        elif avg_compound > -0.25:
-            interpretation = "leggermente negativo, con una certa cautela"
-        elif avg_compound > -0.5:
-            interpretation = "generalmente negativo, con un livello significativo di pessimismo"
+        # Calcola la tendenza (ultimi 5 record vs precedenti)
+        if len(sentiment_data) >= 10:
+            recent_sentiment = sentiment_data['sentiment'].iloc[-5:].mean()
+            previous_sentiment = sentiment_data['sentiment'].iloc[:-5].mean()
+            trend = recent_sentiment - previous_sentiment
+            trend_label = 'in miglioramento' if trend > 0.1 else 'in peggioramento' if trend < -0.1 else 'stabile'
         else:
-            interpretation = "estremamente negativo, suggerendo un forte pessimismo nel mercato"
+            trend = 0
+            trend_label = 'non disponibile'
         
-        return {
-            "score": avg_compound,
-            "label": label,
-            "simplified": simplified,
-            "color": color,
-            "interpretation": interpretation,
-            "trend_direction": trend_direction,
-            "trend_strength": trend_strength
+        # Colori per ciascuna categoria
+        positive_color = self.get_sentiment_colors(0.5)[0]
+        negative_color = self.get_sentiment_colors(-0.5)[0]
+        neutral_color = self.get_sentiment_colors(0)[0]
+        
+        # Crea il riepilogo
+        summary = {
+            'mean_sentiment': mean_sentiment,
+            'max_sentiment': max_sentiment,
+            'min_sentiment': min_sentiment,
+            'positive_count': int(positive_count),
+            'negative_count': int(negative_count),
+            'neutral_count': int(neutral_count),
+            'total_count': total_count,
+            'positive_pct': positive_pct,
+            'negative_pct': negative_pct,
+            'neutral_pct': neutral_pct,
+            'positive_color': positive_color,
+            'negative_color': negative_color,
+            'neutral_color': neutral_color,
+            'trend': trend,
+            'trend_label': trend_label,
+            'overall_sentiment': self.get_sentiment_label(mean_sentiment),
+            'overall_color': self.get_sentiment_colors(mean_sentiment)[0]
         }
+        
+        return summary
 
 
 def generate_sample_news_data(symbol: str, start_date: datetime, end_date: datetime, count: int = 20) -> pd.DataFrame:
@@ -442,78 +345,77 @@ def generate_sample_news_data(symbol: str, start_date: datetime, end_date: datet
     Returns:
         DataFrame con le notizie generate
     """
-    # Template per titoli di notizie
-    bullish_titles = [
-        f"{symbol} potrebbe raggiungere nuovi massimi storici secondo gli analisti",
-        f"Crescente adozione istituzionale per {symbol} con nuovi investimenti",
-        f"Aggiornamento tecnologico importante in arrivo per {symbol}",
-        f"{symbol} registra un aumento significativo delle transazioni",
-        f"Nuova partnership strategica annunciata per {symbol}",
-        f"Gli sviluppatori di {symbol} annunciano importanti miglioramenti alla rete",
-        f"Grande exchange aggiunge il supporto per {symbol}",
-        f"L'analisi on-chain mostra forti segnali rialzisti per {symbol}",
-        f"Il rapporto accumulo/distribuzione di {symbol} suggerisce un trend rialzista",
-        f"Celebre investitore si esprime positivamente su {symbol}"
+    # Titoli positivi
+    positive_titles = [
+        f"{symbol} segna un nuovo massimo storico con aumenti del volume",
+        f"Gli analisti prevedono un futuro brillante per {symbol}",
+        f"{symbol} ottiene nuove partnership importanti nel settore",
+        f"Adozione massiccia di {symbol} da parte di istituzioni finanziarie",
+        f"I fondamentali di {symbol} mostrano segnali positivi",
+        f"{symbol} vede un aumento dell'interesse da parte degli investitori",
+        f"Nuove funzionalità promettenti in arrivo per {symbol}",
+        f"{symbol} supera le aspettative in termini di adozione",
+        f"Analisi tecnica suggerisce tendenza rialzista per {symbol}",
+        f"Grandi investitori accumulano {symbol} a questi livelli"
     ]
     
-    bearish_titles = [
-        f"Preoccupazioni normative crescenti per {symbol}",
-        f"Volume di vendita in aumento per {symbol} mentre il mercato vacilla",
-        f"Analisti avvertono di una possibile correzione per {symbol}",
+    # Titoli negativi
+    negative_titles = [
+        f"Preoccupazioni normative pesano sul prezzo di {symbol}",
+        f"{symbol} affronta un forte calo dopo il recente rally",
+        f"Gli analisti avvertono di possibili correzioni per {symbol}",
         f"Vulnerabilità di sicurezza scoperta nell'ecosistema {symbol}",
-        f"Principali holder stanno riducendo le posizioni in {symbol}",
-        f"Concorrenza crescente potrebbe minacciare la posizione di {symbol}",
-        f"Indicatori tecnici mostrano segnali di sovraccarico per {symbol}",
-        f"Report negativo pubblicato sulle prospettive a lungo termine di {symbol}",
-        f"Exchange importante rimuove le coppie di trading per {symbol}",
-        f"Diminuzione dell'attività degli sviluppatori per {symbol}"
+        f"{symbol} perde terreno rispetto ai concorrenti",
+        f"Vendite massicce colpiscono {symbol} nel mercato cripto",
+        f"Problemi tecnici compromettono la fiducia in {symbol}",
+        f"Critiche alla governance del progetto {symbol}",
+        f"Sentiment di mercato negativo pesa su {symbol}",
+        f"Analisi tecnica indica tendenza ribassista per {symbol}"
     ]
     
+    # Titoli neutri
     neutral_titles = [
-        f"{symbol} si stabilizza dopo la recente volatilità",
-        f"Nuovo paper accademico analizza l'ecosistema di {symbol}",
-        f"Confronto tra {symbol} e altre criptovalute principali",
-        f"Revisione dei fondamentali di {symbol} nel contesto attuale",
-        f"Intervista al team di sviluppo di {symbol}",
-        f"Come funziona la tecnologia dietro {symbol}",
-        f"Prospettive di mercato miste per {symbol} secondo gli esperti",
-        f"Volume di scambio stabile per {symbol} questa settimana",
-        f"Analisi della distribuzione dei wallet di {symbol}",
-        f"Confronto tra gli attuali e precedenti cicli di mercato per {symbol}"
+        f"{symbol} si stabilizza dopo recenti movimenti di mercato",
+        f"Rapporto di analisi approfondita su {symbol} pubblicato oggi",
+        f"Cosa aspettarsi da {symbol} nei prossimi mesi",
+        f"Studio confronta {symbol} con altri asset simili",
+        f"Il team di {symbol} annuncia aggiornamenti trimestrali",
+        f"Analisi delle tendenze di volume per {symbol}",
+        f"{symbol} introduce nuove caratteristiche tecniche",
+        f"Intervista con gli sviluppatori principali di {symbol}",
+        f"Confronto tra {symbol} e asset tradizionali",
+        f"Previsioni di mercato includono {symbol} tra i progetti da monitorare"
     ]
     
-    # Calcola il range di date
+    # Genera date casuali tra start_date e end_date
     date_range = (end_date - start_date).days
+    if date_range <= 0:
+        date_range = 30  # Fallback a 30 giorni
     
-    # Crea le notizie
-    news_data = []
+    dates = [start_date + timedelta(days=random.randint(0, date_range)) for _ in range(count)]
+    dates.sort()
+    
+    # Genera titoli casuali
+    titles = []
+    sources = ['CryptoNews', 'TokenInsider', 'BlockchainToday', 'CoinAnalyst', 'DigitalAssetTimes']
+    
     for _ in range(count):
-        days_offset = random.randint(0, date_range)
-        news_date = start_date + timedelta(days=days_offset)
+        sentiment_type = random.choices(['positive', 'negative', 'neutral'], weights=[0.4, 0.3, 0.3])[0]
         
-        # Scegli casualmente un sentiment e un titolo
-        sentiment_type = random.choices(['bullish', 'bearish', 'neutral'], [0.4, 0.3, 0.3])[0]
-        
-        if sentiment_type == 'bullish':
-            title = random.choice(bullish_titles)
-            sentiment_base = random.uniform(0.1, 0.9)
-        elif sentiment_type == 'bearish':
-            title = random.choice(bearish_titles)
-            sentiment_base = random.uniform(-0.9, -0.1)
+        if sentiment_type == 'positive':
+            title = random.choice(positive_titles)
+        elif sentiment_type == 'negative':
+            title = random.choice(negative_titles)
         else:
             title = random.choice(neutral_titles)
-            sentiment_base = random.uniform(-0.1, 0.1)
         
-        # Aggiungi un po' di rumore al sentiment
-        sentiment = max(-1.0, min(1.0, sentiment_base + random.uniform(-0.1, 0.1)))
-        
-        news_data.append({
-            'date': news_date,
-            'title': title,
-            'sentiment': sentiment
-        })
+        titles.append(title)
     
-    # Ordina per data
-    news_data.sort(key=lambda x: x['date'])
+    # Crea il DataFrame
+    news_data = pd.DataFrame({
+        'date': dates,
+        'title': titles,
+        'source': [random.choice(sources) for _ in range(count)]
+    })
     
-    return pd.DataFrame(news_data)
+    return news_data

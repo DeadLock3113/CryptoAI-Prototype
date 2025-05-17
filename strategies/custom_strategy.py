@@ -1,47 +1,27 @@
 """
 Modulo per le strategie di trading personalizzate in CryptoTradeAnalyzer.
 
-Questo modulo consente agli utenti di creare, salvare e testare strategie
-di trading personalizzate con parametri configurabili.
+Questo modulo contiene le classi e le funzioni per implementare
+strategie di trading personalizzate. Le strategie possono essere
+create dall'utente e ottimizzate con tecniche di IA.
 
 Author: CryptoTradeAnalyzer Team
 """
-import os
-import json
-import logging
-import datetime
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional, Union, Any, Callable
 
-# Setup logging
+import logging
+import pandas as pd
+import numpy as np
+from enum import Enum
+from typing import Dict, Any, List, Optional, Tuple, Union, Callable
+
+# Configurazione del logger
 logger = logging.getLogger(__name__)
 
-class TradingSignal:
-    """Classe per rappresentare un segnale di trading."""
-    BUY = 1
-    SELL = -1
-    HOLD = 0
-    
-    @staticmethod
-    def to_string(signal: int) -> str:
-        """Converte un segnale numerico in stringa."""
-        if signal == TradingSignal.BUY:
-            return "ACQUISTO"
-        elif signal == TradingSignal.SELL:
-            return "VENDITA"
-        else:
-            return "MANTIENI"
-    
-    @staticmethod
-    def get_color(signal: int) -> str:
-        """Restituisce il colore associato al segnale."""
-        if signal == TradingSignal.BUY:
-            return "success"
-        elif signal == TradingSignal.SELL:
-            return "danger"
-        else:
-            return "secondary"
+class TradingSignal(Enum):
+    """Enumerazione dei possibili segnali di trading."""
+    BUY = 1   # Segnale di acquisto
+    SELL = -1  # Segnale di vendita
+    HOLD = 0   # Segnale di attesa
 
 class CustomStrategy:
     """
@@ -50,151 +30,83 @@ class CustomStrategy:
     
     def __init__(self, name: str, description: str = "", parameters: Dict[str, Any] = None):
         """
-        Inizializza una nuova strategia personalizzata.
+        Inizializza una strategia di trading personalizzata.
         
         Args:
             name: Nome della strategia
             description: Descrizione della strategia
-            parameters: Parametri configurabili della strategia
+            parameters: Parametri della strategia in formato dizionario
         """
         self.name = name
         self.description = description
         self.parameters = parameters or {}
-        self.signals = []
-        self.last_update = None
         
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
-        Genera i segnali di trading in base alla strategia.
-        Da sovrascrivere nelle classi derivate.
+        Genera segnali di trading basati sui dati forniti.
+        Da sovrascrivere nelle classi figlie.
         
         Args:
             data: DataFrame con i dati di prezzo
             
         Returns:
-            Serie con i segnali di trading
+            Serie di segnali di trading
         """
-        # Implementazione di base che non genera segnali
-        signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
-        self.signals = signals
-        self.last_update = datetime.datetime.now()
-        return signals
+        raise NotImplementedError("Questo metodo deve essere implementato nelle sottoclassi")
     
-    def get_parameters_description(self) -> Dict[str, Any]:
+    def get_parameter_info(self) -> Dict[str, Dict[str, Any]]:
         """
-        Restituisce la descrizione dei parametri della strategia.
-        Da sovrascrivere nelle classi derivate.
+        Restituisce informazioni sui parametri della strategia.
         
         Returns:
-            Dizionario con le descrizioni dei parametri
+            Dizionario con informazioni sui parametri
         """
-        return {}
+        raise NotImplementedError("Questo metodo deve essere implementato nelle sottoclassi")
     
-    def get_strategy_info(self) -> Dict[str, Any]:
+    def validate_parameters(self) -> bool:
         """
-        Restituisce le informazioni sulla strategia.
+        Verifica che i parametri della strategia siano validi.
         
         Returns:
-            Dizionario con le informazioni
+            True se i parametri sono validi, False altrimenti
         """
-        return {
-            'name': self.name,
-            'description': self.description,
-            'parameters': self.parameters,
-            'parameters_description': self.get_parameters_description(),
-            'last_update': self.last_update.isoformat() if self.last_update else None
-        }
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Converte la strategia in un dizionario.
+        # Verifica che ci siano tutti i parametri necessari
+        required_params = self.get_parameter_info().keys()
+        for param in required_params:
+            if param not in self.parameters:
+                logger.error(f"Parametro mancante: {param}")
+                return False
         
-        Returns:
-            Dizionario con i dati della strategia
-        """
-        return {
-            'name': self.name,
-            'description': self.description,
-            'parameters': self.parameters,
-            'type': self.__class__.__name__
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'CustomStrategy':
-        """
-        Crea una strategia da un dizionario.
-        
-        Args:
-            data: Dizionario con i dati della strategia
-            
-        Returns:
-            Istanza della strategia
-        """
-        strategy = cls(
-            name=data.get('name', 'Strategia personalizzata'),
-            description=data.get('description', ''),
-            parameters=data.get('parameters', {})
-        )
-        return strategy
+        return True
 
 class MovingAverageCrossStrategy(CustomStrategy):
     """
     Strategia basata sull'incrocio di medie mobili.
-    Genera segnali di acquisto quando la media breve supera la media lunga,
-    e segnali di vendita quando la media breve scende sotto la media lunga.
+    Genera segnali di acquisto quando la media breve incrocia al rialzo la media lunga,
+    e segnali di vendita quando la media breve incrocia al ribasso la media lunga.
     """
     
-    def __init__(self, name: str = "Incrocio Medie Mobili", 
-               description: str = "Strategia basata sull'incrocio di medie mobili", 
-               parameters: Dict[str, Any] = None):
+    def __init__(self, name: str = "Moving Average Cross Strategy", 
+                 description: str = "Strategia basata sull'incrocio di medie mobili",
+                 parameters: Dict[str, Any] = None):
         """
-        Inizializza la strategia con parametri predefiniti se non specificati.
+        Inizializza la strategia di incrocio delle medie mobili.
         
         Args:
             name: Nome della strategia
             description: Descrizione della strategia
-            parameters: Parametri della strategia, inclusi i periodi delle medie mobili
+            parameters: Parametri della strategia (short_window, long_window, ma_type)
         """
-        if parameters is None:
-            parameters = {
-                'short_window': 20,
-                'long_window': 50,
-                'price_column': 'close'
-            }
-        super().__init__(name, description, parameters)
-    
-    def get_parameters_description(self) -> Dict[str, Any]:
-        """
-        Restituisce la descrizione dei parametri della strategia.
-        
-        Returns:
-            Dizionario con le descrizioni dei parametri
-        """
-        return {
-            'short_window': {
-                'name': 'Periodo Media Mobile Breve',
-                'description': 'Numero di periodi per la media mobile a breve termine',
-                'type': 'int',
-                'min': 5,
-                'max': 100,
-                'default': 20
-            },
-            'long_window': {
-                'name': 'Periodo Media Mobile Lunga',
-                'description': 'Numero di periodi per la media mobile a lungo termine',
-                'type': 'int',
-                'min': 20,
-                'max': 200,
-                'default': 50
-            },
-            'price_column': {
-                'name': 'Colonna Prezzo',
-                'description': 'Colonna da utilizzare per il calcolo delle medie mobili',
-                'type': 'select',
-                'options': ['open', 'high', 'low', 'close'],
-                'default': 'close'
-            }
+        default_params = {
+            "short_window": 20,
+            "long_window": 50,
+            "ma_type": "SMA"  # SMA, EMA, WMA
         }
+        
+        # Usa i parametri forniti o quelli di default
+        parameters = parameters or default_params
+        
+        super().__init__(name, description, parameters)
     
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
@@ -204,42 +116,91 @@ class MovingAverageCrossStrategy(CustomStrategy):
             data: DataFrame con i dati di prezzo
             
         Returns:
-            Serie con i segnali di trading
+            Serie di segnali di trading
         """
-        if data.empty:
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che i parametri siano validi
+        if not self.validate_parameters():
+            logger.error("Parametri non validi per la strategia")
+            # Ritorna serie vuota
+            return pd.Series(index=data.index)
         
-        # Estrai i parametri
-        short_window = self.parameters.get('short_window', 20)
-        long_window = self.parameters.get('long_window', 50)
-        price_column = self.parameters.get('price_column', 'close')
+        # Estrai parametri
+        short_window = self.parameters["short_window"]
+        long_window = self.parameters["long_window"]
+        ma_type = self.parameters["ma_type"]
         
-        # Verifica che la colonna del prezzo esista
-        if price_column not in data.columns:
-            logger.warning(f"Colonna {price_column} non trovata nei dati. Utilizzando 'close'.")
-            price_column = 'close'
-        
-        # Assicurati che ci siano abbastanza dati
-        if len(data) < max(short_window, long_window):
-            logger.warning("Non ci sono abbastanza dati per calcolare le medie mobili.")
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che il DataFrame contenga i dati necessari
+        if "close" not in data.columns:
+            logger.error("Dati mancanti: colonna 'close' non trovata")
+            return pd.Series(index=data.index)
         
         # Calcola le medie mobili
-        short_ma = data[price_column].rolling(window=short_window).mean()
-        long_ma = data[price_column].rolling(window=long_window).mean()
+        if ma_type == "SMA":
+            short_ma = data["close"].rolling(window=short_window).mean()
+            long_ma = data["close"].rolling(window=long_window).mean()
+        elif ma_type == "EMA":
+            short_ma = data["close"].ewm(span=short_window, adjust=False).mean()
+            long_ma = data["close"].ewm(span=long_window, adjust=False).mean()
+        elif ma_type == "WMA":
+            # Weighted Moving Average
+            weights_short = np.arange(1, short_window + 1)
+            weights_long = np.arange(1, long_window + 1)
+            
+            short_ma = data["close"].rolling(window=short_window).apply(
+                lambda x: np.sum(weights_short * x) / weights_short.sum(), raw=True)
+            
+            long_ma = data["close"].rolling(window=long_window).apply(
+                lambda x: np.sum(weights_long * x) / weights_long.sum(), raw=True)
+        else:
+            logger.error(f"Tipo di media mobile non supportato: {ma_type}")
+            return pd.Series(index=data.index)
         
-        # Inizializza i segnali a HOLD
-        signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Inizializza la serie di segnali con HOLD
+        signals = pd.Series(TradingSignal.HOLD, index=data.index)
         
-        # Genera segnali di acquisto/vendita
-        signals[short_ma > long_ma] = TradingSignal.BUY  # Segnale di acquisto
-        signals[short_ma < long_ma] = TradingSignal.SELL  # Segnale di vendita
-        
-        # Salva i segnali e aggiorna il timestamp
-        self.signals = signals
-        self.last_update = datetime.datetime.now()
+        # Genera segnali
+        for i in range(1, len(data)):
+            # Se la media breve incrocia al rialzo la media lunga, BUY
+            if short_ma.iloc[i-1] < long_ma.iloc[i-1] and short_ma.iloc[i] >= long_ma.iloc[i]:
+                signals.iloc[i] = TradingSignal.BUY
+            # Se la media breve incrocia al ribasso la media lunga, SELL
+            elif short_ma.iloc[i-1] > long_ma.iloc[i-1] and short_ma.iloc[i] <= long_ma.iloc[i]:
+                signals.iloc[i] = TradingSignal.SELL
         
         return signals
+    
+    def get_parameter_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Restituisce informazioni sui parametri della strategia.
+        
+        Returns:
+            Dizionario con informazioni sui parametri
+        """
+        return {
+            "short_window": {
+                "name": "Periodo Media Breve",
+                "description": "Periodo per la media mobile breve",
+                "type": "int",
+                "default": 20,
+                "min": 5,
+                "max": 50
+            },
+            "long_window": {
+                "name": "Periodo Media Lunga",
+                "description": "Periodo per la media mobile lunga",
+                "type": "int",
+                "default": 50,
+                "min": 20,
+                "max": 200
+            },
+            "ma_type": {
+                "name": "Tipo Media Mobile",
+                "description": "Tipo di media mobile da utilizzare",
+                "type": "select",
+                "options": ["SMA", "EMA", "WMA"],
+                "default": "SMA"
+            }
+        }
 
 class BollingerBandsStrategy(CustomStrategy):
     """
@@ -248,58 +209,26 @@ class BollingerBandsStrategy(CustomStrategy):
     e segnali di vendita quando il prezzo tocca la banda superiore.
     """
     
-    def __init__(self, name: str = "Strategia Bande di Bollinger", 
-               description: str = "Strategia basata sulle bande di Bollinger", 
-               parameters: Dict[str, Any] = None):
+    def __init__(self, name: str = "Bollinger Bands Strategy", 
+                 description: str = "Strategia basata sulle bande di Bollinger",
+                 parameters: Dict[str, Any] = None):
         """
-        Inizializza la strategia con parametri predefiniti se non specificati.
+        Inizializza la strategia basata sulle bande di Bollinger.
         
         Args:
             name: Nome della strategia
             description: Descrizione della strategia
-            parameters: Parametri della strategia
+            parameters: Parametri della strategia (window, num_std)
         """
-        if parameters is None:
-            parameters = {
-                'window': 20,
-                'num_std': 2,
-                'price_column': 'close'
-            }
-        super().__init__(name, description, parameters)
-    
-    def get_parameters_description(self) -> Dict[str, Any]:
-        """
-        Restituisce la descrizione dei parametri della strategia.
-        
-        Returns:
-            Dizionario con le descrizioni dei parametri
-        """
-        return {
-            'window': {
-                'name': 'Periodo',
-                'description': 'Numero di periodi per il calcolo della media mobile',
-                'type': 'int',
-                'min': 5,
-                'max': 100,
-                'default': 20
-            },
-            'num_std': {
-                'name': 'Deviazioni Standard',
-                'description': 'Numero di deviazioni standard per le bande',
-                'type': 'float',
-                'min': 0.5,
-                'max': 4.0,
-                'step': 0.1,
-                'default': 2.0
-            },
-            'price_column': {
-                'name': 'Colonna Prezzo',
-                'description': 'Colonna da utilizzare per il calcolo delle bande',
-                'type': 'select',
-                'options': ['open', 'high', 'low', 'close'],
-                'default': 'close'
-            }
+        default_params = {
+            "window": 20,
+            "num_std": 2.0
         }
+        
+        # Usa i parametri forniti o quelli di default
+        parameters = parameters or default_params
+        
+        super().__init__(name, description, parameters)
     
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
@@ -309,141 +238,101 @@ class BollingerBandsStrategy(CustomStrategy):
             data: DataFrame con i dati di prezzo
             
         Returns:
-            Serie con i segnali di trading
+            Serie di segnali di trading
         """
-        if data.empty:
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che i parametri siano validi
+        if not self.validate_parameters():
+            logger.error("Parametri non validi per la strategia")
+            return pd.Series(index=data.index)
         
-        # Estrai i parametri
-        window = self.parameters.get('window', 20)
-        num_std = self.parameters.get('num_std', 2.0)
-        price_column = self.parameters.get('price_column', 'close')
+        # Estrai parametri
+        window = self.parameters["window"]
+        num_std = self.parameters["num_std"]
         
-        # Verifica che la colonna del prezzo esista
-        if price_column not in data.columns:
-            logger.warning(f"Colonna {price_column} non trovata nei dati. Utilizzando 'close'.")
-            price_column = 'close'
+        # Verifica che il DataFrame contenga i dati necessari
+        if "close" not in data.columns:
+            logger.error("Dati mancanti: colonna 'close' non trovata")
+            return pd.Series(index=data.index)
         
-        # Assicurati che ci siano abbastanza dati
-        if len(data) < window:
-            logger.warning("Non ci sono abbastanza dati per calcolare le bande di Bollinger.")
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Calcola la media mobile
+        rolling_mean = data["close"].rolling(window=window).mean()
+        
+        # Calcola la deviazione standard
+        rolling_std = data["close"].rolling(window=window).std()
         
         # Calcola le bande di Bollinger
-        rolling_mean = data[price_column].rolling(window=window).mean()
-        rolling_std = data[price_column].rolling(window=window).std()
-        
         upper_band = rolling_mean + (rolling_std * num_std)
         lower_band = rolling_mean - (rolling_std * num_std)
         
-        # Inizializza i segnali a HOLD
-        signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Inizializza la serie di segnali con HOLD
+        signals = pd.Series(TradingSignal.HOLD, index=data.index)
         
-        # Genera segnali di acquisto/vendita
-        signals[data[price_column] <= lower_band] = TradingSignal.BUY  # Segnale di acquisto
-        signals[data[price_column] >= upper_band] = TradingSignal.SELL  # Segnale di vendita
-        
-        # Salva i segnali e aggiorna il timestamp
-        self.signals = signals
-        self.last_update = datetime.datetime.now()
+        # Genera segnali
+        for i in range(1, len(data)):
+            # Se il prezzo tocca o scende sotto la banda inferiore, BUY
+            if data["close"].iloc[i-1] > lower_band.iloc[i-1] and data["close"].iloc[i] <= lower_band.iloc[i]:
+                signals.iloc[i] = TradingSignal.BUY
+            # Se il prezzo tocca o sale sopra la banda superiore, SELL
+            elif data["close"].iloc[i-1] < upper_band.iloc[i-1] and data["close"].iloc[i] >= upper_band.iloc[i]:
+                signals.iloc[i] = TradingSignal.SELL
         
         return signals
+    
+    def get_parameter_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Restituisce informazioni sui parametri della strategia.
+        
+        Returns:
+            Dizionario con informazioni sui parametri
+        """
+        return {
+            "window": {
+                "name": "Periodo",
+                "description": "Periodo per il calcolo delle bande",
+                "type": "int",
+                "default": 20,
+                "min": 10,
+                "max": 50
+            },
+            "num_std": {
+                "name": "Deviazioni Standard",
+                "description": "Numero di deviazioni standard per le bande",
+                "type": "float",
+                "default": 2.0,
+                "min": 1.0,
+                "max": 3.0,
+                "step": 0.1
+            }
+        }
 
 class RSIStrategy(CustomStrategy):
     """
     Strategia basata sull'indicatore RSI (Relative Strength Index).
-    Genera segnali di acquisto quando l'RSI è sotto la soglia di ipervenduto,
-    e segnali di vendita quando l'RSI è sopra la soglia di ipercomprato.
+    Genera segnali di acquisto quando l'RSI è in zona di ipervenduto,
+    e segnali di vendita quando l'RSI è in zona di ipercomprato.
     """
     
-    def __init__(self, name: str = "Strategia RSI", 
-               description: str = "Strategia basata sull'indicatore RSI", 
-               parameters: Dict[str, Any] = None):
+    def __init__(self, name: str = "RSI Strategy", 
+                 description: str = "Strategia basata sull'indicatore RSI",
+                 parameters: Dict[str, Any] = None):
         """
-        Inizializza la strategia con parametri predefiniti se non specificati.
+        Inizializza la strategia basata sull'RSI.
         
         Args:
             name: Nome della strategia
             description: Descrizione della strategia
-            parameters: Parametri della strategia
+            parameters: Parametri della strategia (window, overbought, oversold)
         """
-        if parameters is None:
-            parameters = {
-                'window': 14,
-                'overbought': 70,
-                'oversold': 30,
-                'price_column': 'close'
-            }
-        super().__init__(name, description, parameters)
-    
-    def get_parameters_description(self) -> Dict[str, Any]:
-        """
-        Restituisce la descrizione dei parametri della strategia.
-        
-        Returns:
-            Dizionario con le descrizioni dei parametri
-        """
-        return {
-            'window': {
-                'name': 'Periodo RSI',
-                'description': 'Numero di periodi per il calcolo del RSI',
-                'type': 'int',
-                'min': 2,
-                'max': 50,
-                'default': 14
-            },
-            'overbought': {
-                'name': 'Soglia Ipercomprato',
-                'description': 'Livello RSI sopra il quale si considera il mercato ipercomprato',
-                'type': 'int',
-                'min': 50,
-                'max': 90,
-                'default': 70
-            },
-            'oversold': {
-                'name': 'Soglia Ipervenduto',
-                'description': 'Livello RSI sotto il quale si considera il mercato ipervenduto',
-                'type': 'int',
-                'min': 10,
-                'max': 50,
-                'default': 30
-            },
-            'price_column': {
-                'name': 'Colonna Prezzo',
-                'description': 'Colonna da utilizzare per il calcolo del RSI',
-                'type': 'select',
-                'options': ['open', 'high', 'low', 'close'],
-                'default': 'close'
-            }
+        default_params = {
+            "window": 14,
+            "overbought": 70,
+            "oversold": 30
         }
-    
-    def _calculate_rsi(self, data: pd.Series, window: int) -> pd.Series:
-        """
-        Calcola l'RSI per una serie di dati.
         
-        Args:
-            data: Serie con i dati di prezzo
-            window: Periodo per il calcolo dell'RSI
-            
-        Returns:
-            Serie con i valori dell'RSI
-        """
-        # Calcola le variazioni giornaliere
-        delta = data.diff()
+        # Usa i parametri forniti o quelli di default
+        parameters = parameters or default_params
         
-        # Separa guadagni e perdite
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        
-        # Calcola le medie dei guadagni e delle perdite
-        avg_gain = gain.rolling(window=window).mean()
-        avg_loss = loss.rolling(window=window).mean()
-        
-        # Calcola l'RSI
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
+        super().__init__(name, description, parameters)
     
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
@@ -453,332 +342,292 @@ class RSIStrategy(CustomStrategy):
             data: DataFrame con i dati di prezzo
             
         Returns:
-            Serie con i segnali di trading
+            Serie di segnali di trading
         """
-        if data.empty:
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che i parametri siano validi
+        if not self.validate_parameters():
+            logger.error("Parametri non validi per la strategia")
+            return pd.Series(index=data.index)
         
-        # Estrai i parametri
-        window = self.parameters.get('window', 14)
-        overbought = self.parameters.get('overbought', 70)
-        oversold = self.parameters.get('oversold', 30)
-        price_column = self.parameters.get('price_column', 'close')
+        # Estrai parametri
+        window = self.parameters["window"]
+        overbought = self.parameters["overbought"]
+        oversold = self.parameters["oversold"]
         
-        # Verifica che la colonna del prezzo esista
-        if price_column not in data.columns:
-            logger.warning(f"Colonna {price_column} non trovata nei dati. Utilizzando 'close'.")
-            price_column = 'close'
-        
-        # Assicurati che ci siano abbastanza dati
-        if len(data) < window:
-            logger.warning("Non ci sono abbastanza dati per calcolare il RSI.")
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che il DataFrame contenga i dati necessari
+        if "close" not in data.columns:
+            logger.error("Dati mancanti: colonna 'close' non trovata")
+            return pd.Series(index=data.index)
         
         # Calcola l'RSI
-        rsi = self._calculate_rsi(data[price_column], window)
+        rsi = self._calculate_rsi(data["close"], window)
         
-        # Inizializza i segnali a HOLD
-        signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Inizializza la serie di segnali con HOLD
+        signals = pd.Series(TradingSignal.HOLD, index=data.index)
         
-        # Genera segnali di acquisto/vendita
-        signals[rsi <= oversold] = TradingSignal.BUY  # Segnale di acquisto
-        signals[rsi >= overbought] = TradingSignal.SELL  # Segnale di vendita
-        
-        # Salva i segnali e aggiorna il timestamp
-        self.signals = signals
-        self.last_update = datetime.datetime.now()
+        # Genera segnali
+        for i in range(1, len(data)):
+            # Se l'RSI esce dalla zona di ipervenduto, BUY
+            if rsi.iloc[i-1] <= oversold and rsi.iloc[i] > oversold:
+                signals.iloc[i] = TradingSignal.BUY
+            # Se l'RSI entra nella zona di ipercomprato, SELL
+            elif rsi.iloc[i-1] >= overbought and rsi.iloc[i] < overbought:
+                signals.iloc[i] = TradingSignal.SELL
         
         return signals
+    
+    def _calculate_rsi(self, data: pd.Series, window: int) -> pd.Series:
+        """
+        Calcola l'indicatore RSI.
+        
+        Args:
+            data: Serie di prezzi
+            window: Periodo per il calcolo dell'RSI
+            
+        Returns:
+            Serie con i valori dell'RSI
+        """
+        # Calcola le variazioni di prezzo
+        delta = data.diff()
+        
+        # Separa variazioni positive e negative
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        
+        # Calcola la media mobile delle variazioni
+        avg_gain = gain.rolling(window=window).mean()
+        avg_loss = loss.rolling(window=window).mean()
+        
+        # Calcola l'RSI
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    def get_parameter_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Restituisce informazioni sui parametri della strategia.
+        
+        Returns:
+            Dizionario con informazioni sui parametri
+        """
+        return {
+            "window": {
+                "name": "Periodo RSI",
+                "description": "Periodo per il calcolo dell'RSI",
+                "type": "int",
+                "default": 14,
+                "min": 7,
+                "max": 30
+            },
+            "overbought": {
+                "name": "Soglia Ipercomprato",
+                "description": "Livello RSI considerato ipercomprato",
+                "type": "int",
+                "default": 70,
+                "min": 60,
+                "max": 90
+            },
+            "oversold": {
+                "name": "Soglia Ipervenduto",
+                "description": "Livello RSI considerato ipervenduto",
+                "type": "int",
+                "default": 30,
+                "min": 10,
+                "max": 40
+            }
+        }
 
 class SentimentBasedStrategy(CustomStrategy):
     """
     Strategia basata sull'analisi del sentiment.
-    Genera segnali di acquisto quando il sentiment è molto positivo,
-    e segnali di vendita quando il sentiment è molto negativo.
+    Genera segnali di acquisto quando il sentiment è positivo,
+    e segnali di vendita quando il sentiment è negativo.
     """
     
-    def __init__(self, name: str = "Strategia Basata sul Sentiment", 
-               description: str = "Strategia che genera segnali basati sull'analisi del sentiment", 
-               parameters: Dict[str, Any] = None):
+    def __init__(self, name: str = "Sentiment-Based Strategy", 
+                 description: str = "Strategia che utilizza l'analisi del sentiment",
+                 parameters: Dict[str, Any] = None):
         """
-        Inizializza la strategia con parametri predefiniti se non specificati.
+        Inizializza la strategia basata sul sentiment.
         
         Args:
             name: Nome della strategia
             description: Descrizione della strategia
-            parameters: Parametri della strategia
+            parameters: Parametri della strategia (positive_threshold, negative_threshold, trend_weight)
         """
-        if parameters is None:
-            parameters = {
-                'positive_threshold': 0.4,
-                'negative_threshold': -0.4,
-                'price_influence': 0.5
-            }
+        default_params = {
+            "positive_threshold": 0.3,
+            "negative_threshold": -0.3,
+            "trend_weight": 0.5  # Peso del trend rispetto al sentiment (0-1)
+        }
+        
+        # Usa i parametri forniti o quelli di default
+        parameters = parameters or default_params
+        
         super().__init__(name, description, parameters)
     
-    def get_parameters_description(self) -> Dict[str, Any]:
+    def generate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
-        Restituisce la descrizione dei parametri della strategia.
-        
-        Returns:
-            Dizionario con le descrizioni dei parametri
-        """
-        return {
-            'positive_threshold': {
-                'name': 'Soglia Sentiment Positivo',
-                'description': 'Soglia sopra la quale il sentiment è considerato molto positivo',
-                'type': 'float',
-                'min': 0.1,
-                'max': 0.9,
-                'step': 0.1,
-                'default': 0.4
-            },
-            'negative_threshold': {
-                'name': 'Soglia Sentiment Negativo',
-                'description': 'Soglia sotto la quale il sentiment è considerato molto negativo',
-                'type': 'float',
-                'min': -0.9,
-                'max': -0.1,
-                'step': 0.1,
-                'default': -0.4
-            },
-            'price_influence': {
-                'name': 'Influenza Trend Prezzo',
-                'description': 'Peso del trend di prezzo nella decisione (0 = solo sentiment, 1 = solo prezzo)',
-                'type': 'float',
-                'min': 0.0,
-                'max': 1.0,
-                'step': 0.1,
-                'default': 0.5
-            }
-        }
-    
-    def generate_signals(self, data: pd.DataFrame, sentiment_data: Optional[pd.Series] = None) -> pd.Series:
-        """
-        Genera segnali di trading basati sul sentiment e sul trend del prezzo.
+        Genera segnali di trading basati sul sentiment.
         
         Args:
             data: DataFrame con i dati di prezzo
-            sentiment_data: Serie con i dati del sentiment per ogni data
             
         Returns:
-            Serie con i segnali di trading
+            Serie di segnali di trading
         """
-        if data.empty:
-            return pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Verifica che i parametri siano validi
+        if not self.validate_parameters():
+            logger.error("Parametri non validi per la strategia")
+            return pd.Series(index=data.index)
         
-        # Se non ci sono dati di sentiment, usa solo il trend del prezzo
-        if sentiment_data is None or sentiment_data.empty:
-            # Calcola una media mobile semplice per determinare il trend
-            window = 20
-            sma = data['close'].rolling(window=window).mean()
-            
-            # Inizializza i segnali a HOLD
-            signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
-            
-            # Genera segnali basati sul trend del prezzo
-            signals[data['close'] > sma] = TradingSignal.BUY  # Trend rialzista
-            signals[data['close'] < sma] = TradingSignal.SELL  # Trend ribassista
-            
-            # Salva i segnali e aggiorna il timestamp
-            self.signals = signals
-            self.last_update = datetime.datetime.now()
-            
-            return signals
+        # Estrai parametri
+        positive_threshold = self.parameters["positive_threshold"]
+        negative_threshold = self.parameters["negative_threshold"]
+        trend_weight = self.parameters["trend_weight"]
         
-        # Estrai i parametri
-        positive_threshold = self.parameters.get('positive_threshold', 0.4)
-        negative_threshold = self.parameters.get('negative_threshold', -0.4)
-        price_influence = self.parameters.get('price_influence', 0.5)
+        # Verifica che il DataFrame contenga i dati necessari
+        required_columns = ["close", "sentiment"]
+        for col in required_columns:
+            if col not in data.columns:
+                logger.error(f"Dati mancanti: colonna '{col}' non trovata")
+                return pd.Series(index=data.index)
         
-        # Calcola il trend del prezzo
-        window = 20
-        sma = data['close'].rolling(window=window).mean()
-        price_trend = pd.Series(index=data.index, data=TradingSignal.HOLD)
-        price_trend[data['close'] > sma] = TradingSignal.BUY
-        price_trend[data['close'] < sma] = TradingSignal.SELL
+        # Calcola il trend di prezzo (media mobile a 5 giorni)
+        price_ma5 = data["close"].rolling(window=5).mean()
+        price_trend = (data["close"] - price_ma5) / price_ma5
         
-        # Genera segnali basati sul sentiment
-        sentiment_signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
+        # Combina sentiment e trend
+        combined_signal = (data["sentiment"] * (1 - trend_weight) + 
+                          price_trend * trend_weight)
         
-        # Allinea i dati di sentiment con i dati di prezzo
-        aligned_sentiment = pd.Series(index=data.index)
-        for date in data.index:
-            date_str = date.strftime('%Y-%m-%d')
-            if date_str in sentiment_data.index:
-                aligned_sentiment[date] = sentiment_data[date_str]
+        # Inizializza la serie di segnali con HOLD
+        signals = pd.Series(TradingSignal.HOLD, index=data.index)
         
-        # Genera segnali basati sul sentiment
-        sentiment_signals[aligned_sentiment > positive_threshold] = TradingSignal.BUY
-        sentiment_signals[aligned_sentiment < negative_threshold] = TradingSignal.SELL
+        # Genera segnali
+        for i in range(1, len(data)):
+            # Se il segnale combinato supera la soglia positiva, BUY
+            if combined_signal.iloc[i] >= positive_threshold:
+                signals.iloc[i] = TradingSignal.BUY
+            # Se il segnale combinato scende sotto la soglia negativa, SELL
+            elif combined_signal.iloc[i] <= negative_threshold:
+                signals.iloc[i] = TradingSignal.SELL
         
-        # Combina i segnali del sentiment e del trend del prezzo
-        combined_signals = pd.Series(index=data.index, data=TradingSignal.HOLD)
-        for date in data.index:
-            if pd.notna(aligned_sentiment[date]):
-                # Se c'è un dato di sentiment, combina i segnali
-                if sentiment_signals[date] == price_trend[date]:
-                    # Se entrambi danno lo stesso segnale, usa quello
-                    combined_signals[date] = sentiment_signals[date]
-                elif sentiment_signals[date] == TradingSignal.HOLD:
-                    # Se il sentiment è neutro, usa il trend del prezzo
-                    combined_signals[date] = price_trend[date]
-                elif price_trend[date] == TradingSignal.HOLD:
-                    # Se il trend del prezzo è neutro, usa il sentiment
-                    combined_signals[date] = sentiment_signals[date]
-                else:
-                    # Se i segnali sono contrastanti, usa la ponderazione
-                    sentiment_weight = 1 - price_influence
-                    combined_value = (sentiment_signals[date] * sentiment_weight + 
-                                    price_trend[date] * price_influence)
-                    
-                    if combined_value > 0.3:
-                        combined_signals[date] = TradingSignal.BUY
-                    elif combined_value < -0.3:
-                        combined_signals[date] = TradingSignal.SELL
-                    else:
-                        combined_signals[date] = TradingSignal.HOLD
-            else:
-                # Se non c'è un dato di sentiment, usa solo il trend del prezzo
-                combined_signals[date] = price_trend[date]
+        return signals
+    
+    def get_parameter_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Restituisce informazioni sui parametri della strategia.
         
-        # Salva i segnali e aggiorna il timestamp
-        self.signals = combined_signals
-        self.last_update = datetime.datetime.now()
-        
-        return combined_signals
+        Returns:
+            Dizionario con informazioni sui parametri
+        """
+        return {
+            "positive_threshold": {
+                "name": "Soglia Positiva",
+                "description": "Soglia del sentiment per segnali di acquisto",
+                "type": "float",
+                "default": 0.3,
+                "min": 0.1,
+                "max": 0.7,
+                "step": 0.05
+            },
+            "negative_threshold": {
+                "name": "Soglia Negativa",
+                "description": "Soglia del sentiment per segnali di vendita",
+                "type": "float",
+                "default": -0.3,
+                "min": -0.7,
+                "max": -0.1,
+                "step": 0.05
+            },
+            "trend_weight": {
+                "name": "Peso del Trend",
+                "description": "Peso da assegnare al trend di prezzo (vs sentiment)",
+                "type": "float",
+                "default": 0.5,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.1
+            }
+        }
 
 class CustomStrategyBuilder:
     """
-    Classe per la creazione e gestione di strategie personalizzate.
+    Builder per creare strategie personalizzate.
     """
     
-    STRATEGY_TYPES = {
-        'MovingAverageCrossStrategy': MovingAverageCrossStrategy,
-        'BollingerBandsStrategy': BollingerBandsStrategy,
-        'RSIStrategy': RSIStrategy,
-        'SentimentBasedStrategy': SentimentBasedStrategy
-    }
-    
     @staticmethod
-    def create_strategy(strategy_type: str, name: str, description: str = "", 
+    def create_strategy(strategy_type: str, name: str = None, description: str = None, 
                        parameters: Dict[str, Any] = None) -> CustomStrategy:
         """
-        Crea una nuova strategia del tipo specificato.
+        Crea una strategia del tipo specificato.
         
         Args:
             strategy_type: Tipo di strategia da creare
-            name: Nome della strategia
-            description: Descrizione della strategia
-            parameters: Parametri della strategia
+            name: Nome della strategia (opzionale)
+            description: Descrizione della strategia (opzionale)
+            parameters: Parametri della strategia (opzionale)
             
         Returns:
             Istanza della strategia creata
         """
-        if strategy_type not in CustomStrategyBuilder.STRATEGY_TYPES:
+        # Dizionario di classi di strategia disponibili
+        strategy_classes = {
+            "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
+            "BollingerBandsStrategy": BollingerBandsStrategy,
+            "RSIStrategy": RSIStrategy,
+            "SentimentBasedStrategy": SentimentBasedStrategy
+        }
+        
+        # Verifica che il tipo di strategia sia valido
+        if strategy_type not in strategy_classes:
+            logger.error(f"Tipo di strategia non supportato: {strategy_type}")
             raise ValueError(f"Tipo di strategia non supportato: {strategy_type}")
         
-        strategy_class = CustomStrategyBuilder.STRATEGY_TYPES[strategy_type]
+        # Crea un'istanza della strategia
+        strategy_class = strategy_classes[strategy_type]
+        
+        # Se nome e descrizione non sono specificati, usa quelli di default
+        if name is None:
+            name = strategy_class().name
+        if description is None:
+            description = strategy_class().description
+        
         return strategy_class(name=name, description=description, parameters=parameters)
     
     @staticmethod
-    def get_available_strategies() -> List[Dict[str, Any]]:
+    def get_available_strategy_types() -> List[str]:
         """
-        Restituisce l'elenco delle strategie disponibili.
+        Restituisce i tipi di strategia disponibili.
         
         Returns:
-            Lista con le informazioni sulle strategie disponibili
+            Lista di tipi di strategia disponibili
         """
-        strategies = []
-        
-        for strategy_type, strategy_class in CustomStrategyBuilder.STRATEGY_TYPES.items():
-            # Crea un'istanza temporanea per ottenere la descrizione dei parametri
-            temp_instance = strategy_class()
-            
-            strategies.append({
-                'type': strategy_type,
-                'name': temp_instance.name,
-                'description': temp_instance.description,
-                'parameters': temp_instance.get_parameters_description()
-            })
-        
-        return strategies
+        return [
+            "MovingAverageCrossStrategy",
+            "BollingerBandsStrategy",
+            "RSIStrategy",
+            "SentimentBasedStrategy"
+        ]
     
     @staticmethod
-    def load_strategy_from_dict(data: Dict[str, Any]) -> CustomStrategy:
+    def get_strategy_info(strategy_type: str) -> Dict[str, Any]:
         """
-        Carica una strategia da un dizionario.
+        Restituisce informazioni su un tipo di strategia.
         
         Args:
-            data: Dizionario con i dati della strategia
+            strategy_type: Tipo di strategia
             
         Returns:
-            Istanza della strategia caricata
+            Dizionario con informazioni sulla strategia
         """
-        strategy_type = data.get('type')
+        # Crea un'istanza della strategia per ottenere le informazioni
+        strategy = CustomStrategyBuilder.create_strategy(strategy_type)
         
-        if strategy_type not in CustomStrategyBuilder.STRATEGY_TYPES:
-            raise ValueError(f"Tipo di strategia non supportato: {strategy_type}")
-        
-        strategy_class = CustomStrategyBuilder.STRATEGY_TYPES[strategy_type]
-        return strategy_class.from_dict(data)
-    
-    @staticmethod
-    def combine_strategies(strategies: List[CustomStrategy], 
-                         weights: Optional[List[float]] = None, 
-                         name: str = "Strategia Combinata") -> CustomStrategy:
-        """
-        Combina più strategie in una singola strategia.
-        
-        Args:
-            strategies: Lista di strategie da combinare
-            weights: Pesi da assegnare a ciascuna strategia (opzionale)
-            name: Nome della strategia combinata
-            
-        Returns:
-            Strategia combinata
-        """
-        if not strategies:
-            raise ValueError("La lista di strategie è vuota")
-        
-        # Se i pesi non sono specificati, usa pesi uguali
-        if weights is None:
-            weights = [1.0 / len(strategies)] * len(strategies)
-        elif len(weights) != len(strategies):
-            raise ValueError("Il numero di pesi deve essere uguale al numero di strategie")
-        
-        # Normalizza i pesi
-        total_weight = sum(weights)
-        normalized_weights = [w / total_weight for w in weights]
-        
-        # Crea una nuova strategia combinata
-        description = "Strategia combinata basata su: " + ", ".join(s.name for s in strategies)
-        combined_strategy = CustomStrategy(name=name, description=description)
-        
-        # Definisci la funzione per generare i segnali combinati
-        def generate_combined_signals(data: pd.DataFrame) -> pd.Series:
-            if data.empty:
-                return pd.Series(index=data.index, data=TradingSignal.HOLD)
-            
-            # Genera i segnali per ciascuna strategia
-            all_signals = []
-            for i, strategy in enumerate(strategies):
-                signals = strategy.generate_signals(data)
-                all_signals.append(signals)
-            
-            # Combina i segnali usando i pesi
-            combined = pd.Series(index=data.index, data=0.0)
-            for i, signals in enumerate(all_signals):
-                combined += signals * normalized_weights[i]
-            
-            # Converti in segnali discreti
-            result = pd.Series(index=data.index, data=TradingSignal.HOLD)
-            result[combined > 0.3] = TradingSignal.BUY
-            result[combined < -0.3] = TradingSignal.SELL
-            
-            return result
-        
-        # Sostituisci il metodo generate_signals con quello combinato
-        combined_strategy.generate_signals = generate_combined_signals
-        
-        return combined_strategy
+        return {
+            "name": strategy.name,
+            "description": strategy.description,
+            "parameters": strategy.get_parameter_info()
+        }

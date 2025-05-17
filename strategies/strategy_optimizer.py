@@ -9,16 +9,15 @@ l'accuratezza della strategia.
 Author: CryptoTradeAnalyzer Team
 """
 
-import pandas as pd
-import numpy as np
-import random
-import math
-import copy
 import logging
+import random
+import numpy as np
+import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional, Union
 from datetime import datetime
 
 from strategies.custom_strategy import CustomStrategy, TradingSignal, CustomStrategyBuilder
+
 # Configurazione del logger
 logger = logging.getLogger(__name__)
 
@@ -98,8 +97,7 @@ class StrategyOptimizer:
             crossover_rate: Probabilità di crossover
         """
         self.data = data
-        self.original_strategy = strategy
-        self.train_test_split = train_test_split
+        self.strategy = strategy
         self.population_size = population_size
         self.generations = generations
         self.mutation_rate = mutation_rate
@@ -128,43 +126,51 @@ class StrategyOptimizer:
         Returns:
             Tupla (strategia ottimizzata, metriche di miglioramento, flag se migliorata)
         """
-        # Genera la popolazione iniziale
+        logger.info(f"Avvio ottimizzazione della strategia {self.strategy.name}")
+        
+        # Inizializza la popolazione
         population = self._initialize_population()
         
-        # Evolvi la popolazione per il numero specificato di generazioni
-        for generation in range(self.generations):
-            # Valuta il fitness di ciascuna strategia nella popolazione
+        # Evoluzione della popolazione per n generazioni
+        for gen in range(self.generations):
+            logger.info(f"Generazione {gen + 1}/{self.generations}")
+            
+            # Calcola il fitness di ciascuna strategia nella popolazione
             fitness_scores = [self._fitness_function(strategy) for strategy in population]
             
-            # Traccia la strategia migliore di questa generazione
+            # Trova la migliore strategia di questa generazione
             best_idx = np.argmax(fitness_scores)
-            current_best_strategy = population[best_idx]
+            current_best = population[best_idx]
             current_best_fitness = fitness_scores[best_idx]
             
-            # Aggiorna la migliore strategia complessiva se necessario
+            # Aggiorna la migliore strategia globale se necessario
             if current_best_fitness > self.best_fitness:
-                self.best_strategy = copy.deepcopy(current_best_strategy)
                 self.best_fitness = current_best_fitness
-                logger.info(f"Nuova migliore strategia trovata nella generazione {generation + 1} con fitness {self.best_fitness}")
+                self.best_strategy = current_best
+                logger.info(f"Nuova migliore strategia trovata (fitness: {self.best_fitness:.4f})")
             
-            # Seleziona i genitori per la riproduzione
+            # Seleziona i genitori per la prossima generazione
             parents = self._select_parents(population, fitness_scores)
             
-            # Crea una nuova popolazione attraverso crossover e mutazione
+            # Crea la nuova popolazione
             new_population = []
             
+            # Elitismo: mantieni la migliore strategia
+            new_population.append(current_best)
+            
+            # Genera il resto della popolazione
             while len(new_population) < self.population_size:
-                # Seleziona due genitori casuali
-                parent1, parent2 = random.sample(parents, 2)
+                # Seleziona due genitori
+                parent1 = random.choice(parents)
+                parent2 = random.choice(parents)
                 
-                # Applica crossover con una certa probabilità
+                # Applica crossover con probabilità crossover_rate
                 if random.random() < self.crossover_rate:
                     child = self._crossover(parent1, parent2)
                 else:
-                    # Se non c'è crossover, usa uno dei genitori
-                    child = copy.deepcopy(random.choice([parent1, parent2]))
+                    child = parent1  # Se non viene fatto crossover, usa il primo genitore
                 
-                # Applica mutazione con una certa probabilità
+                # Applica mutazione con probabilità mutation_rate
                 if random.random() < self.mutation_rate:
                     child = self._mutate(child)
                 
@@ -172,46 +178,37 @@ class StrategyOptimizer:
             
             # Sostituisci la vecchia popolazione con la nuova
             population = new_population
-            
-            logger.info(f"Generazione {generation + 1} completata. Miglior fitness: {self.best_fitness}")
         
-        # Calcola le performance della migliore strategia trovata
-        if self.best_strategy:
-            best_performance = self._evaluate_strategy(self.best_strategy, self.test_data)
-            
-            # Calcola il miglioramento percentuale delle metriche chiave
-            improvement = {}
-            
-            for metric in ["accuracy", "profit_factor", "sharpe_ratio"]:
-                if metric in self.original_performance and metric in best_performance:
-                    original_value = self.original_performance[metric]
-                    new_value = best_performance[metric]
-                    
-                    # Evita divisione per zero
-                    if original_value != 0:
-                        pct_improvement = ((new_value - original_value) / abs(original_value)) * 100
-                    else:
-                        pct_improvement = float('inf') if new_value > 0 else 0
-                    
-                    improvement[metric] = pct_improvement
-            
-            # Determina se c'è stato un miglioramento significativo
-            is_improved = (
-                improvement.get("accuracy", 0) > 5 or  # +5% accuratezza
-                improvement.get("profit_factor", 0) > 10 or  # +10% profit factor
-                improvement.get("sharpe_ratio", 0) > 15  # +15% Sharpe ratio
-            )
-            
-            if is_improved:
-                logger.info(f"Strategia migliorata! Miglioramenti: {improvement}")
-                self.improvement = improvement
-                return self.best_strategy, improvement, True
-            else:
-                logger.info("Nessun miglioramento significativo trovato.")
-                return self.original_strategy, improvement, False
+        # Se non è stata trovata una strategia migliore, usa quella originale
+        if self.best_strategy is None:
+            self.best_strategy = self.strategy
+            logger.info("Nessuna strategia migliore trovata, utilizzo l'originale")
+            return self.strategy, {}, False
         
-        # Se non è stata trovata una strategia migliore, restituisci quella originale
-        return self.original_strategy, {}, False
+        # Valuta le performance della miglior strategia sul test set
+        best_performance = self._evaluate_strategy(self.best_strategy, self.test_data)
+        
+        # Calcola il miglioramento percentuale rispetto alla strategia originale
+        improvements = {}
+        is_improved = False
+        
+        for metric, value in best_performance.items():
+            if metric in self.original_performance and self.original_performance[metric] > 0:
+                improvement_pct = ((value - self.original_performance[metric]) / 
+                                  self.original_performance[metric]) * 100
+                improvements[metric] = improvement_pct
+                
+                # Se c'è un miglioramento significativo, aggiorna la strategia
+                if improvement_pct > 5:  # 5% di miglioramento è considerato significativo
+                    is_improved = True
+        
+        # Se non c'è un miglioramento significativo, ritorna la strategia originale
+        if not is_improved:
+            logger.info("Miglioramento non significativo, strategia originale mantenuta")
+            return self.strategy, improvements, False
+        
+        logger.info(f"Strategia ottimizzata con successo: {improvements}")
+        return self.best_strategy, improvements, True
     
     def _initialize_population(self) -> List[CustomStrategy]:
         """
@@ -223,42 +220,44 @@ class StrategyOptimizer:
         """
         population = []
         
-        # Ottieni la descrizione dei parametri della strategia originale
-        param_desc = self.original_strategy.get_parameters_description()
-        current_params = self.original_strategy.parameters
+        # La prima strategia della popolazione è quella originale
+        population.append(self.strategy)
         
-        for _ in range(self.population_size):
-            # Crea una copia della strategia originale
-            strategy_type = type(self.original_strategy).__name__
-            new_params = {}
+        # Ottieni informazioni sui parametri
+        param_info = self.strategy.get_parameter_info() if hasattr(self.strategy, 'get_parameter_info') else {}
+        
+        # Genera il resto della popolazione
+        for _ in range(self.population_size - 1):
+            # Crea una copia dei parametri originali
+            new_params = self.strategy.parameters.copy()
             
-            # Varia casualmente i parametri
-            for param_name, param_info in param_desc.items():
-                current_value = current_params.get(param_name, param_info.get("default"))
+            # Modifica casualmente alcuni parametri
+            for param_name, info in param_info.items():
+                # Probabilità di mutare ciascun parametro
+                if random.random() < 0.5:
+                    continue
                 
-                if param_info.get("type") == "int":
-                    min_val = param_info.get("min", current_value // 2)
-                    max_val = param_info.get("max", current_value * 2)
-                    new_value = random.randint(min_val, max_val)
+                # Gestisci diversi tipi di parametri
+                if info['type'] == 'int':
+                    min_val = info.get('min', 1)
+                    max_val = info.get('max', 100)
+                    new_params[param_name] = random.randint(min_val, max_val)
                 
-                elif param_info.get("type") == "float":
-                    min_val = param_info.get("min", current_value / 2)
-                    max_val = param_info.get("max", current_value * 2)
-                    new_value = random.uniform(min_val, max_val)
+                elif info['type'] == 'float':
+                    min_val = info.get('min', 0.0)
+                    max_val = info.get('max', 1.0)
+                    step = info.get('step', 0.1)
+                    steps = int((max_val - min_val) / step)
+                    new_params[param_name] = min_val + random.randint(0, steps) * step
                 
-                elif param_info.get("type") == "select" and param_info.get("options"):
-                    new_value = random.choice(param_info.get("options"))
-                
-                else:
-                    new_value = current_value
-                
-                new_params[param_name] = new_value
+                elif info['type'] == 'select' and 'options' in info:
+                    new_params[param_name] = random.choice(info['options'])
             
-            # Crea una nuova strategia con i parametri variati
+            # Crea una nuova strategia con i parametri modificati
             new_strategy = CustomStrategyBuilder.create_strategy(
-                strategy_type=strategy_type,
-                name=self.original_strategy.name,
-                description=self.original_strategy.description,
+                strategy_type=self.strategy.__class__.__name__,
+                name=self.strategy.name,
+                description=self.strategy.description,
                 parameters=new_params
             )
             
@@ -276,14 +275,15 @@ class StrategyOptimizer:
         Returns:
             Valore di fitness
         """
+        # Valuta la strategia sui dati di training
         performance = self._evaluate_strategy(strategy, self.train_data)
         
-        # Calcola il fitness combinando diverse metriche
+        # Calcola il valore di fitness come combinazione delle metriche
         fitness = (
-            2.0 * performance.get("accuracy", 0) +  # Accuratezza ha peso 2
-            1.5 * performance.get("profit_factor", 0) +  # Profit factor ha peso 1.5
-            1.0 * performance.get("sharpe_ratio", 0) +  # Sharpe ratio ha peso 1
-            0.5 * performance.get("win_rate", 0)  # Win rate ha peso 0.5
+            performance.get('accuracy', 0) * 0.3 +
+            performance.get('profit_factor', 0) * 0.3 +
+            performance.get('sharpe_ratio', 0) * 0.2 +
+            performance.get('win_rate', 0) * 0.2
         )
         
         return fitness
@@ -299,73 +299,81 @@ class StrategyOptimizer:
         Returns:
             Dizionario con le metriche di performance
         """
-        # Genera i segnali per i dati forniti
-        signals = strategy.generate_signals(data)
-        
-        # Calcola le performance utilizzando le funzioni dalla classe PerformanceMetrics
-        metrics = {}
-        
-        # Accuratezza (rispetto a un trend semplice)
-        price_changes = data['close'].pct_change().shift(-1)  # Cambio percentuale del prezzo futuro
-        correct_signals = ((signals == TradingSignal.BUY) & (price_changes > 0)) | \
-                         ((signals == TradingSignal.SELL) & (price_changes < 0)) | \
-                         ((signals == TradingSignal.HOLD) & (abs(price_changes) < 0.005))
-        
-        metrics["accuracy"] = correct_signals.mean()
-        
-        # Simula i risultati di trading
-        position = 0  # 1 = long, -1 = short, 0 = no position
-        trades = []
-        
-        for i, signal in enumerate(signals):
-            if i >= len(data) - 1:
-                break
-                
-            price = data.iloc[i]['close']
-            next_price = data.iloc[i+1]['close']
+        try:
+            # Genera i segnali
+            signals = strategy.generate_signals(data)
             
-            if signal == TradingSignal.BUY and position <= 0:
-                # Chiudi posizione short se presente
-                if position == -1:
-                    trades.append(price - entry_price)  # profit/loss
+            # Calcola le variazioni di prezzo
+            price_changes = data['close'].pct_change().shift(-1)
+            
+            # Calcola l'accuratezza dei segnali
+            accuracy = PerformanceMetrics.calculate_accuracy(signals, price_changes)
+            
+            # Simula il trading
+            position = 0  # 0 = no position, 1 = long, -1 = short
+            trades = []
+            entry_price = 0
+            
+            for i, signal in enumerate(signals):
+                if i >= len(data) - 1:
+                    break
+                    
+                current_price = data['close'].iloc[i]
+                next_price = data['close'].iloc[i+1]
                 
-                # Apri long
-                position = 1
-                entry_price = price
-                
-            elif signal == TradingSignal.SELL and position >= 0:
-                # Chiudi posizione long se presente
-                if position == 1:
-                    trades.append(price - entry_price)  # profit/loss
-                
-                # Apri short
-                position = -1
-                entry_price = price
-        
-        # Calcola metriche dai trade
-        if trades:
+                if signal == TradingSignal.BUY and position <= 0:
+                    # Chiudi short se presente
+                    if position == -1:
+                        trades.append(entry_price - current_price)
+                    
+                    # Apri long
+                    position = 1
+                    entry_price = current_price
+                    
+                elif signal == TradingSignal.SELL and position >= 0:
+                    # Chiudi long se presente
+                    if position == 1:
+                        trades.append(current_price - entry_price)
+                    
+                    # Apri short
+                    position = -1
+                    entry_price = current_price
+            
+            # Chiudi l'ultima posizione
+            if position == 1:
+                trades.append(data['close'].iloc[-1] - entry_price)
+            elif position == -1:
+                trades.append(entry_price - data['close'].iloc[-1])
+            
+            # Calcola le metriche di performance
+            # Win rate
             winning_trades = [t for t in trades if t > 0]
-            losing_trades = [t for t in trades if t < 0]
+            win_rate = len(winning_trades) / len(trades) if trades else 0
             
-            metrics["win_rate"] = len(winning_trades) / len(trades) if trades else 0
+            # Profit factor
+            profit_factor = PerformanceMetrics.calculate_profit_factor(trades)
             
-            total_profit = sum(winning_trades) if winning_trades else 0
-            total_loss = abs(sum(losing_trades)) if losing_trades else 0
+            # Sharpe ratio
+            returns = [t / entry_price for t in trades] if entry_price > 0 else []
+            sharpe_ratio = PerformanceMetrics.calculate_sharpe_ratio(returns)
             
-            metrics["profit_factor"] = total_profit / total_loss if total_loss > 0 else total_profit if total_profit > 0 else 0
+            return {
+                'accuracy': float(accuracy),
+                'win_rate': float(win_rate),
+                'profit_factor': float(profit_factor),
+                'sharpe_ratio': float(sharpe_ratio),
+                'trades_count': len(trades)
+            }
             
-            # Calcola Sharpe ratio (semplificato)
-            returns = [t / entry_price for t in trades]
-            avg_return = sum(returns) / len(returns)
-            std_return = np.std(returns) if len(returns) > 1 else 1
-            
-            metrics["sharpe_ratio"] = avg_return / std_return if std_return > 0 else 0
-        else:
-            metrics["win_rate"] = 0
-            metrics["profit_factor"] = 0
-            metrics["sharpe_ratio"] = 0
-        
-        return metrics
+        except Exception as e:
+            logger.error(f"Errore durante la valutazione della strategia: {e}")
+            return {
+                'accuracy': 0.0,
+                'win_rate': 0.0,
+                'profit_factor': 0.0,
+                'sharpe_ratio': 0.0,
+                'trades_count': 0
+            }
     
     def _select_parents(self, population: List[CustomStrategy], fitness_scores: List[float]) -> List[CustomStrategy]:
         """
@@ -380,21 +388,17 @@ class StrategyOptimizer:
             Lista di strategie selezionate come genitori
         """
         parents = []
-        tournament_size = max(2, self.population_size // 5)
         
-        # Normalizza i fitness per evitare valori negativi
-        min_fitness = min(fitness_scores)
-        normalized_fitness = [f - min_fitness + 1e-6 for f in fitness_scores]
-        
-        # Esegui la selezione a torneo
+        # Seleziona i genitori con tornei
         for _ in range(self.population_size):
-            # Seleziona un sottogruppo casuale
-            candidates_idx = random.sample(range(len(population)), tournament_size)
-            candidates_fitness = [normalized_fitness[i] for i in candidates_idx]
+            # Seleziona casualmente due candidati per il torneo
+            idx1, idx2 = random.sample(range(len(population)), 2)
             
-            # Seleziona il migliore del torneo
-            best_candidate_idx = candidates_idx[np.argmax(candidates_fitness)]
-            parents.append(population[best_candidate_idx])
+            # Il candidato con il fitness più alto vince
+            if fitness_scores[idx1] > fitness_scores[idx2]:
+                parents.append(population[idx1])
+            else:
+                parents.append(population[idx2])
         
         return parents
     
@@ -409,41 +413,28 @@ class StrategyOptimizer:
         Returns:
             Nuova strategia creata dal crossover
         """
-        # Ottieni i parametri da entrambi i genitori
-        params1 = parent1.parameters
-        params2 = parent2.parameters
+        # Crea una copia dei parametri
+        child_params = {}
         
-        # Crea un nuovo set di parametri combinando quelli dei genitori
-        new_params = {}
+        # Ottieni le informazioni sui parametri
+        param_info = parent1.get_parameter_info()
         
-        for param_name in params1.keys():
-            # Scegli casualmente il parametro da uno dei genitori
-            # oppure crea un valore intermedio per parametri numerici
+        # Per ogni parametro, scegli casualmente da quale genitore prenderlo
+        for param_name in param_info.keys():
             if random.random() < 0.5:
-                new_params[param_name] = params1[param_name]
+                child_params[param_name] = parent1.parameters.get(param_name)
             else:
-                new_params[param_name] = params2[param_name]
-            
-            # Per valori numerici, a volte crea una media pesata
-            if isinstance(params1[param_name], (int, float)) and isinstance(params2[param_name], (int, float)):
-                if random.random() < 0.3:  # 30% di probabilità di usare un valore intermedio
-                    weight = random.random()  # Peso casuale
-                    value = weight * params1[param_name] + (1 - weight) * params2[param_name]
-                    
-                    # Arrotonda a intero se necessario
-                    if isinstance(params1[param_name], int):
-                        value = int(round(value))
-                    
-                    new_params[param_name] = value
+                child_params[param_name] = parent2.parameters.get(param_name)
         
-        # Crea una nuova strategia con i parametri combinati
-        strategy_type = type(parent1).__name__
-        return CustomStrategyBuilder.create_strategy(
-            strategy_type=strategy_type,
+        # Crea una nuova strategia con i parametri del figlio
+        child = CustomStrategyBuilder.create_strategy(
+            strategy_type=parent1.__class__.__name__,
             name=parent1.name,
             description=parent1.description,
-            parameters=new_params
+            parameters=child_params
         )
+        
+        return child
     
     def _mutate(self, strategy: CustomStrategy) -> CustomStrategy:
         """
@@ -455,126 +446,60 @@ class StrategyOptimizer:
         Returns:
             Strategia mutata
         """
-        # Ottieni la descrizione dei parametri e i valori attuali
-        param_desc = strategy.get_parameters_description()
-        current_params = strategy.parameters
-        new_params = copy.deepcopy(current_params)
+        # Crea una copia dei parametri
+        new_params = strategy.parameters.copy()
         
-        # Seleziona casualmente alcuni parametri da mutare
-        params_to_mutate = random.sample(
-            list(current_params.keys()),
-            k=max(1, int(len(current_params) * self.mutation_rate))
-        )
+        # Ottieni informazioni sui parametri
+        param_info = strategy.get_parameter_info()
         
-        for param_name in params_to_mutate:
-            param_info = param_desc.get(param_name, {})
-            current_value = current_params[param_name]
+        # Seleziona casualmente un parametro da mutare
+        param_to_mutate = random.choice(list(param_info.keys()))
+        info = param_info[param_to_mutate]
+        
+        # Muta il parametro in base al suo tipo
+        if info['type'] == 'int':
+            min_val = info.get('min', 1)
+            max_val = info.get('max', 100)
             
-            if param_info.get("type") == "int":
-                # Muta parametri interi
-                min_val = param_info.get("min", max(1, current_value // 2))
-                max_val = param_info.get("max", current_value * 2)
-                
-                # Aggiungi o sottrai un valore casuale
-                delta = random.randint(1, max(1, (max_val - min_val) // 5))
-                if random.random() < 0.5:
-                    delta = -delta
-                
-                new_value = max(min_val, min(max_val, current_value + delta))
-                new_params[param_name] = new_value
-                
-            elif param_info.get("type") == "float":
-                # Muta parametri float
-                min_val = param_info.get("min", current_value / 2)
-                max_val = param_info.get("max", current_value * 2)
-                
-                # Aggiungi o sottrai una percentuale casuale
-                delta = random.uniform(0.05, 0.25) * current_value
-                if random.random() < 0.5:
-                    delta = -delta
-                
-                new_value = max(min_val, min(max_val, current_value + delta))
-                new_params[param_name] = new_value
-                
-            elif param_info.get("type") == "select" and param_info.get("options"):
-                # Seleziona casualmente un nuovo valore dalle opzioni
-                options = [opt for opt in param_info.get("options") if opt != current_value]
-                if options:
-                    new_params[param_name] = random.choice(options)
+            # Genera un nuovo valore che è diverso dal precedente
+            current_val = new_params[param_to_mutate]
+            new_val = current_val
+            
+            while new_val == current_val:
+                new_val = random.randint(min_val, max_val)
+            
+            new_params[param_to_mutate] = new_val
+        
+        elif info['type'] == 'float':
+            min_val = info.get('min', 0.0)
+            max_val = info.get('max', 1.0)
+            step = info.get('step', 0.1)
+            
+            # Genera un nuovo valore che è diverso dal precedente
+            current_val = new_params[param_to_mutate]
+            new_val = current_val
+            
+            while new_val == current_val:
+                steps = int((max_val - min_val) / step)
+                new_val = min_val + random.randint(0, steps) * step
+            
+            new_params[param_to_mutate] = new_val
+        
+        elif info['type'] == 'select' and 'options' in info:
+            # Scegli un'opzione diversa da quella corrente
+            options = info['options'].copy()
+            current_val = new_params[param_to_mutate]
+            
+            if len(options) > 1:
+                options.remove(current_val)
+                new_params[param_to_mutate] = random.choice(options)
         
         # Crea una nuova strategia con i parametri mutati
-        strategy_type = type(strategy).__name__
-        return CustomStrategyBuilder.create_strategy(
-            strategy_type=strategy_type,
+        mutated = CustomStrategyBuilder.create_strategy(
+            strategy_type=strategy.__class__.__name__,
             name=strategy.name,
             description=strategy.description,
             parameters=new_params
         )
-
-
-class BacktestPerformanceMetrics:
-    """
-    Classe helper per calcolare metriche di performance nel backtest.
-    """
-    
-    @staticmethod
-    def calculate_accuracy(signals: pd.Series, data: pd.DataFrame) -> float:
-        """
-        Calcola l'accuratezza dei segnali generati.
         
-        Args:
-            signals: Serie di segnali generati
-            data: DataFrame con i dati di prezzo
-            
-        Returns:
-            Accuratezza come percentuale
-        """
-        price_changes = data['close'].pct_change().shift(-1)
-        correct_signals = ((signals == TradingSignal.BUY) & (price_changes > 0)) | \
-                         ((signals == TradingSignal.SELL) & (price_changes < 0)) | \
-                         ((signals == TradingSignal.HOLD) & (abs(price_changes) < 0.005))
-        
-        return correct_signals.mean() if len(correct_signals) > 0 else 0.0
-    
-    @staticmethod
-    def calculate_profit_factor(trades: List[float]) -> float:
-        """
-        Calcola il profit factor dai trade.
-        
-        Args:
-            trades: Lista di profitti/perdite dei trade
-            
-        Returns:
-            Profit factor
-        """
-        winning_trades = [t for t in trades if t > 0]
-        losing_trades = [t for t in trades if t < 0]
-        
-        total_profit = sum(winning_trades) if winning_trades else 0
-        total_loss = abs(sum(losing_trades)) if losing_trades else 0
-        
-        return total_profit / total_loss if total_loss > 0 else float('inf') if total_profit > 0 else 0
-    
-    @staticmethod
-    def calculate_sharpe_ratio(trades: List[float], risk_free_rate: float = 0.0) -> float:
-        """
-        Calcola il Sharpe ratio dai trade.
-        
-        Args:
-            trades: Lista di profitti/perdite dei trade
-            risk_free_rate: Tasso privo di rischio annualizzato
-            
-        Returns:
-            Sharpe ratio
-        """
-        if not trades:
-            return 0.0
-        
-        returns = trades
-        avg_return = sum(returns) / len(returns)
-        std_return = np.std(returns) if len(returns) > 1 else 1
-        
-        # Assumiamo che i rendimenti siano annualizzati
-        excess_return = avg_return - risk_free_rate
-        
-        return excess_return / std_return if std_return > 0 else 0
+        return mutated

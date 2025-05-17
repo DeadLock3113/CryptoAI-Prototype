@@ -180,3 +180,68 @@ class Prediction(db.Model):
     
     def __repr__(self):
         return f'<Prediction {self.timestamp} {self.value}>'
+
+
+class CustomStrategyModel(db.Model):
+    """Modello per le strategie di trading personalizzate"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    strategy_type = db.Column(db.String(64), nullable=False)  # Tipo di strategia (es. MovingAverageCrossStrategy)
+    parameters = db.Column(db.JSON, nullable=False)  # Parametri della strategia in formato JSON
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Metriche di performance
+    accuracy = db.Column(db.Float, nullable=True)
+    profit_factor = db.Column(db.Float, nullable=True)
+    sharpe_ratio = db.Column(db.Float, nullable=True)
+    win_rate = db.Column(db.Float, nullable=True)
+    
+    # Foreign key per l'utente
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('custom_strategies', lazy='dynamic'))
+    
+    # Relazione con il dataset
+    dataset_id = db.Column(db.Integer, db.ForeignKey('dataset.id'), nullable=True)
+    dataset = db.relationship('Dataset', backref=db.backref('custom_strategies', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<CustomStrategy {self.name} ({self.strategy_type})>'
+
+
+class SentimentData(db.Model):
+    """Modello per i dati dell'analisi di sentiment"""
+    id = db.Column(db.Integer, primary_key=True)
+    data = db.Column(db.JSON, nullable=False)  # Dati del sentiment in formato JSON
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Foreign key per l'utente e il dataset
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('sentiment_data', lazy='dynamic'))
+    
+    dataset_id = db.Column(db.Integer, db.ForeignKey('dataset.id'), nullable=False)
+    dataset = db.relationship('Dataset', backref=db.backref('sentiment_data', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<SentimentData id={self.id} dataset_id={self.dataset_id}>'
+
+
+class NotificationSettings(db.Model):
+    """Impostazioni per le notifiche di prezzo"""
+    id = db.Column(db.Integer, primary_key=True)
+    timeframe = db.Column(db.String(10), default='1h')  # '1m', '5m', '15m', '30m', '1h', '4h', '1d'
+    enabled = db.Column(db.Boolean, default=False)
+    last_notification = db.Column(db.DateTime, nullable=True)
+    
+    # Configurazione delle soglie per le notifiche
+    price_change_threshold = db.Column(db.Float, default=1.0)  # Percentuale di cambio per notifiche
+    volume_change_threshold = db.Column(db.Float, default=20.0)  # Percentuale di cambio del volume
+    
+    # Foreign key per l'utente
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    user = db.relationship('User', backref=db.backref('notification_settings', uselist=False, cascade='all, delete-orphan'))
+    
+    def __repr__(self):
+        return f'<NotificationSettings user_id={self.user_id} enabled={self.enabled}>'
