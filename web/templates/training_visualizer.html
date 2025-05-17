@@ -335,6 +335,51 @@
                                     </tbody>
                                 </table>
                             </div>
+                            
+                            <!-- Tracciamento progresso -->
+                            <div class="mt-4 pt-3 border-top border-secondary">
+                                <h6 class="text-light mb-3">
+                                    <i class="bi bi-graph-up-arrow"></i> Progresso Addestramento
+                                </h6>
+                                
+                                <!-- Indicatore miglioramento MSE -->
+                                <div class="progress-tracking mb-3">
+                                    <div class="d-flex justify-content-between">
+                                        <small class="text-light">MSE <span class="text-muted">(iniziale vs. attuale)</span></small>
+                                        <small id="mse-improvement" class="badge bg-success">-</small>
+                                    </div>
+                                    <div class="progress mt-1" style="height: 6px;">
+                                        <div id="mse-progress" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small id="initial-mse" class="text-muted">-</small>
+                                        <small id="current-mse-value" class="text-light">-</small>
+                                    </div>
+                                </div>
+                                
+                                <!-- Indicatore miglioramento R² -->
+                                <div class="progress-tracking mb-3">
+                                    <div class="d-flex justify-content-between">
+                                        <small class="text-light">R² <span class="text-muted">(Coefficiente determinazione)</span></small>
+                                        <small id="r2-improvement" class="badge bg-success">-</small>
+                                    </div>
+                                    <div class="progress mt-1" style="height: 6px;">
+                                        <div id="r2-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small id="initial-r2" class="text-muted">-</small>
+                                        <small id="current-r2-value" class="text-light">-</small>
+                                    </div>
+                                </div>
+                                
+                                <!-- Stato addestramento -->
+                                <div class="alert alert-dark py-2 mt-3" role="alert">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-lightbulb me-2"></i>
+                                        <span id="training-insight" class="small">In attesa di dati sufficienti per l'analisi...</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -367,13 +412,60 @@
         }
     }
     
+    // Metriche iniziali per confronto
+    let initialMetrics = {
+        mse: null,
+        r2: null,
+        epochsCompleted: 0
+    };
+    
     // Aggiornare le metriche visualizzate
     function updateMetrics(metrics) {
         if (!metrics) return;
         
+        // Salva metriche iniziali (la prima volta)
+        if (initialMetrics.mse === null && metrics.mse !== undefined) {
+            initialMetrics.mse = metrics.mse;
+            document.getElementById('initial-mse').textContent = metrics.mse.toFixed(4);
+        }
+        
+        if (initialMetrics.r2 === null && metrics.r2 !== undefined) {
+            initialMetrics.r2 = metrics.r2;
+            document.getElementById('initial-r2').textContent = metrics.r2.toFixed(4);
+        }
+        
+        // Aggiorna i valori correnti nelle tabelle di metriche
         if (metrics.mse !== undefined) {
             document.getElementById('metric-mse').textContent = metrics.mse.toFixed(6);
             document.getElementById('update-mse').textContent = new Date().toLocaleTimeString();
+            document.getElementById('current-mse-value').textContent = metrics.mse.toFixed(4);
+            
+            // Calcola e mostra miglioramento
+            if (initialMetrics.mse !== null) {
+                const improvement = ((initialMetrics.mse - metrics.mse) / initialMetrics.mse * 100);
+                // Per MSE un valore minore è migliore, quindi vogliamo una percentuale positiva
+                const formattedImprovement = improvement > 0 
+                    ? `↓ ${improvement.toFixed(1)}%` 
+                    : `↑ ${Math.abs(improvement).toFixed(1)}%`;
+                
+                document.getElementById('mse-improvement').textContent = formattedImprovement;
+                
+                // Aggiorna classe per mostrare miglioramento/peggioramento
+                const improvementEl = document.getElementById('mse-improvement');
+                improvementEl.className = improvement > 0 ? 'badge bg-success' : 'badge bg-danger';
+                
+                // Aggiorna barra di progresso (MSE più basso = progresso migliore)
+                // Calcoliamo la percentuale di miglioramento con un massimo del 100%
+                const progressPercent = Math.min(100, Math.max(0, improvement));
+                document.getElementById('mse-progress').style.width = `${progressPercent}%`;
+                
+                // Aggiungi effetto di animazione alla barra
+                const progressBar = document.getElementById('mse-progress');
+                progressBar.classList.add('progress-bar-animated');
+                setTimeout(() => {
+                    progressBar.classList.remove('progress-bar-animated');
+                }, 1000);
+            }
         }
         
         if (metrics.rmse !== undefined) {
@@ -389,7 +481,88 @@
         if (metrics.r2 !== undefined) {
             document.getElementById('metric-r2').textContent = metrics.r2.toFixed(6);
             document.getElementById('update-r2').textContent = new Date().toLocaleTimeString();
+            document.getElementById('current-r2-value').textContent = metrics.r2.toFixed(4);
+            
+            // Calcola e mostra miglioramento R²
+            if (initialMetrics.r2 !== null) {
+                const improvement = ((metrics.r2 - initialMetrics.r2) / Math.max(0.01, initialMetrics.r2) * 100);
+                // Per R², un valore maggiore è migliore, quindi vogliamo una percentuale positiva
+                const formattedImprovement = improvement > 0 
+                    ? `↑ ${improvement.toFixed(1)}%` 
+                    : `↓ ${Math.abs(improvement).toFixed(1)}%`;
+                
+                document.getElementById('r2-improvement').textContent = formattedImprovement;
+                
+                // Aggiorna classe per mostrare miglioramento/peggioramento
+                const improvementEl = document.getElementById('r2-improvement');
+                improvementEl.className = improvement > 0 ? 'badge bg-success' : 'badge bg-danger';
+                
+                // Aggiorna barra di progresso (R² più alto = progresso migliore)
+                // Normalizzazione per un valore tra 0-1 tipico di R²
+                const normalizedR2 = Math.min(1, Math.max(0, metrics.r2));
+                const progressPercent = normalizedR2 * 100;
+                document.getElementById('r2-progress').style.width = `${progressPercent}%`;
+                
+                // Aggiungi effetto di animazione alla barra
+                const progressBar = document.getElementById('r2-progress');
+                progressBar.classList.add('progress-bar-animated');
+                setTimeout(() => {
+                    progressBar.classList.remove('progress-bar-animated');
+                }, 1000);
+            }
         }
+        
+        // Aggiorna l'indicatore di insight sull'addestramento
+        updateTrainingInsight(metrics);
+    }
+    
+    // Fornisce insight sul progresso dell'addestramento
+    function updateTrainingInsight(metrics) {
+        const insightEl = document.getElementById('training-insight');
+        const epoch = parseInt(document.getElementById('current-epoch').textContent) || 0;
+        
+        // Incrementa il contatore epoche
+        initialMetrics.epochsCompleted = Math.max(initialMetrics.epochsCompleted, epoch);
+        
+        if (epoch < 3) {
+            insightEl.textContent = "Addestramento nelle fasi iniziali, attendere per analisi più accurate...";
+            return;
+        }
+        
+        // Analizza le metriche per fornire insight utili
+        let insight = "";
+        
+        if (metrics.mse !== undefined && initialMetrics.mse !== null) {
+            const mseImprovement = ((initialMetrics.mse - metrics.mse) / initialMetrics.mse * 100);
+            
+            if (mseImprovement > 30) {
+                insight = "Ottimo progresso! L'errore (MSE) è diminuito significativamente.";
+            } else if (mseImprovement > 15) {
+                insight = "Buon progresso nell'addestramento. L'errore continua a diminuire.";
+            } else if (mseImprovement > 5) {
+                insight = "Modello in miglioramento, ma con un ritmo moderato.";
+            } else if (mseImprovement > 0) {
+                insight = "Miglioramento lento. Considerare un aggiustamento degli iperparametri.";
+            } else {
+                insight = "Attenzione: l'errore sta aumentando. Possibile overfitting o problemi di convergenza.";
+            }
+        } else if (metrics.r2 !== undefined && initialMetrics.r2 !== null) {
+            const r2Current = metrics.r2;
+            
+            if (r2Current > 0.9) {
+                insight = "Eccellente capacità predittiva (R² > 0.9). Il modello si adatta molto bene ai dati.";
+            } else if (r2Current > 0.7) {
+                insight = "Buona capacità predittiva. Il modello cattura la maggior parte delle variazioni.";
+            } else if (r2Current > 0.5) {
+                insight = "Capacità predittiva discreta. C'è ancora margine di miglioramento.";
+            } else {
+                insight = "Capacità predittiva limitata. Considerare revisione del modello o dei dati.";
+            }
+        } else {
+            insight = "Raccolta dati in corso per analisi approfondita...";
+        }
+        
+        insightEl.textContent = insight;
     }
     
     // Aggiornare i log di addestramento
