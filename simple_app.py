@@ -2214,6 +2214,82 @@ def server_error(e):
     logger.error(f"Server error: {str(e)}")
     return render_template('500.html'), 500
 
+@app.route('/update_notification_settings', methods=['POST'])
+def update_notification_settings():
+    """Aggiorna le impostazioni di notifica dell'utente"""
+    # Controlla se l'utente è autenticato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Ottieni i dati dal form
+    timeframe = request.form.get('notification_timeframe', '1h')
+    enabled = 'notification_enabled' in request.form
+    
+    # Ottieni le impostazioni esistenti
+    notification_settings = NotificationSettings.query.filter_by(user_id=user.id).first()
+    
+    # Se non esistono, crea nuove impostazioni
+    if not notification_settings:
+        notification_settings = NotificationSettings(
+            user_id=user.id,
+            timeframe=timeframe,
+            enabled=enabled
+        )
+        db.session.add(notification_settings)
+    else:
+        # Aggiorna le impostazioni esistenti
+        notification_settings.timeframe = timeframe
+        notification_settings.enabled = enabled
+    
+    # Salva le modifiche
+    db.session.commit()
+    
+    # Invia un messaggio di conferma via Telegram se abilitato
+    if enabled and user.telegram_bot_token and user.telegram_chat_id:
+        try:
+            # Crea un messaggio di test con dati di esempio
+            message = {
+                'total_balance': 1000.0,
+                'currencies': {'BTC': 0.01, 'ETH': 0.1, 'USDT': 500}
+            }
+            send_balance_update(user, message)
+            flash('Notifiche Telegram abilitate con successo! È stato inviato un messaggio di prova.', 'success')
+        except Exception as e:
+            flash(f'Notifiche abilitate, ma non è stato possibile inviare un messaggio di prova: {str(e)}', 'warning')
+    else:
+        flash('Impostazioni di notifica aggiornate con successo!', 'success')
+    
+    return redirect(url_for('index'))
+
+@app.route('/send_price_notification/<string:symbol>/<string:alert_type>')
+def send_price_notification(symbol, alert_type):
+    """Invia una notifica di prezzo manuale (solo per test)"""
+    # Controlla se l'utente è autenticato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Controlla se l'utente ha configurato Telegram
+    if not user.telegram_bot_token or not user.telegram_chat_id:
+        flash('Devi configurare le impostazioni Telegram nel tuo profilo prima di poter ricevere notifiche.', 'warning')
+        return redirect(url_for('profile'))
+    
+    # Simula un prezzo e una variazione
+    price = 50000.0 if symbol == 'BTC' else 3000.0 if symbol == 'ETH' else 1.0
+    change_percent = 5.0 if alert_type == 'new_high' else -5.0 if alert_type == 'new_low' else 2.0
+    
+    # Invia la notifica
+    try:
+        send_price_alert(user, symbol, price, alert_type, change_percent)
+        flash(f'Notifica {alert_type} per {symbol} inviata con successo!', 'success')
+    except Exception as e:
+        flash(f'Errore nell\'invio della notifica: {str(e)}', 'danger')
+    
+    return redirect(url_for('index'))
+
 @app.context_processor
 def inject_globals():
     """Inject global variables into templates"""
