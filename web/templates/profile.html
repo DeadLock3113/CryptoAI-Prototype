@@ -199,31 +199,46 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                 // Ottieni riferimento al container prima di eseguire la chiamata fetch
                 const profilesContainer = document.querySelector('.api-profiles-container');
                 
-                fetch(`/api/get-profile/${profileId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Popola i campi del form
-                        const profileData = data.profile.data;
-                        for (const key in profileData) {
-                            if (document.querySelector(`[name="${key}"]`)) {
-                                document.querySelector(`[name="${key}"]`).value = profileData[key];
-                            }
-                        }
-                        
-                        // Chiudi il pannello usando il riferimento ottenuto all'inizio
-                        if (profilesContainer) {
-                            profilesContainer.style.display = 'none';
-                        }
-                        alert('Profilo caricato con successo!');
-                    } else {
-                        alert('Errore: ' + data.message);
+                // Mostriamo indicatore di caricamento
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'alert alert-info';
+                loadingMessage.textContent = 'Caricamento profilo in corso...';
+                
+                try {
+                    // Chiudi il pannello immediatamente prima di iniziare il caricamento
+                    if (profilesContainer) {
+                        profilesContainer.style.display = 'none';
                     }
-                })
-                .catch(error => {
-                    console.error('Errore:', error);
-                    alert('Si è verificato un errore durante il caricamento del profilo.');
-                });
+                    
+                    // Facciamo la chiamata in modo asincrono senza bloccare l'interfaccia
+                    setTimeout(() => {
+                        fetch(`/api/get-profile/${profileId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Popola i campi del form
+                                const profileData = data.profile.data;
+                                for (const key in profileData) {
+                                    const el = document.querySelector(`[name="${key}"]`);
+                                    if (el) {
+                                        el.value = profileData[key];
+                                    }
+                                }
+                                
+                                alert('Profilo caricato con successo!');
+                            } else {
+                                alert('Errore: ' + data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Errore:', error);
+                            alert('Si è verificato un errore durante il caricamento del profilo.');
+                        });
+                    }, 100); // Un breve delay per consentire all'interfaccia di aggiornarsi
+                } catch (error) {
+                    console.error('Errore imprevisto:', error);
+                    alert('Si è verificato un errore imprevisto.');
+                }
             }
             
             // Elimina un profilo
