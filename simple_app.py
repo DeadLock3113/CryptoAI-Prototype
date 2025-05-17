@@ -1638,9 +1638,9 @@ def models():
             
             # Set device (CPU/GPU) con gestione semplificata
             device = torch.device("cpu")  # Default to CPU
-            gpu_type = "CPU"
             
             try:
+                import os
                 # Tentiamo solo CUDA per massima compatibilità
                 if torch.cuda.is_available():
                     device = torch.device("cuda:0")
@@ -1655,7 +1655,6 @@ def models():
                 logger.debug(f"Error detecting GPU: {str(e)}. Using CPU.")
                 # Assicuriamoci che device sia impostato a CPU in caso di errori
                 device = torch.device("cpu")
-# Rimuovere questa sezione obsoleta che sta causando conflitti
             
             logger.debug(f"Using device: {device}")
             
