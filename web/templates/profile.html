@@ -196,6 +196,9 @@ Gestisci il tuo profilo e visualizza la tua attività recente
             
             // Carica un profilo specifico
             function loadApiProfile(profileId) {
+                // Ottieni riferimento al container prima di eseguire la chiamata fetch
+                const profilesContainer = document.querySelector('.api-profiles-container');
+                
                 fetch(`/api/get-profile/${profileId}`)
                 .then(response => response.json())
                 .then(data => {
@@ -208,8 +211,10 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                             }
                         }
                         
-                        // Chiudi il pannello
-                        apiProfilesContainer.style.display = 'none';
+                        // Chiudi il pannello usando il riferimento ottenuto all'inizio
+                        if (profilesContainer) {
+                            profilesContainer.style.display = 'none';
+                        }
                         alert('Profilo caricato con successo!');
                     } else {
                         alert('Errore: ' + data.message);
