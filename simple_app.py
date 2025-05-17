@@ -1829,7 +1829,7 @@ def training_progress(training_id):
             val_loss = max(0.07, 0.6 * (1 - reduction_factor * 0.75))
             
             # Invia l'aggiornamento dell'epoca
-            yield f"event: epoch_complete\ndata: {json.dumps({
+            data = {
                 'epoch': epoch,
                 'total_epochs': max_epochs,
                 'train_loss': current_loss,
@@ -1842,13 +1842,14 @@ def training_progress(training_id):
                     'r2': min(0.95, 0.5 + 0.4 * reduction_factor),
                     'calculated_at': time.strftime('%H:%M:%S')
                 }
-            })}\n\n"
+            }
+            yield f"event: epoch_complete\ndata: {json.dumps(data)}\n\n"
             
             # Invia heartbeat tra le epoche
             yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
         
         # Invia l'evento di completamento
-        yield f"event: training_complete\ndata: {json.dumps({
+        completion_data = {
             'total_time': elapsed_time,
             'best_loss': min(current_loss, val_loss),
             'final_loss': current_loss,
@@ -1859,7 +1860,8 @@ def training_progress(training_id):
                 'r2': 0.9,
                 'epochs_completed': max_epochs
             }
-        })}\n\n"
+        }
+        yield f"event: training_complete\ndata: {json.dumps(completion_data)}\n\n"
     
     return Response(event_stream(), 
                    content_type='text/event-stream',
@@ -1868,16 +1870,7 @@ def training_progress(training_id):
                        'Connection': 'keep-alive'
                    })
         
-        # Invia eventi finali se necessario
-        if training_session.status == 'completed':
-            completion_data = {
-                'total_time': training_session.end_time - training_session.start_time,
-                'final_loss': training_session.train_loss,
-                'metrics': training_session.metrics
-            }
-            yield f"event: training_complete\ndata: {json.dumps(completion_data)}\n\n"
-        elif training_session.status in ['error', 'stopped']:
-            yield f"event: training_error\ndata: {json.dumps({'error': 'Addestramento interrotto o terminato con errori'})}\n\n"
+# Fine dell'endpoint training_progress
     
     return Response(stream_with_context(event_stream()), 
                    content_type='text/event-stream',
