@@ -1,16 +1,20 @@
 {% extends "layout.html" %}
 
-{% block title %}Login{% endblock %}
+{% block title %}Registrazione{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6 col-lg-5">
         <div class="card shadow-sm">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Accedi</h5>
+                <h5 class="mb-0">Registrazione</h5>
             </div>
             <div class="card-body p-4">
-                <form method="POST" action="{{ url_for('login') }}">
+                <form method="POST" action="{{ url_for('register') }}">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
                     <div class="mb-3">
                         <label for="email" class="form-label">Email</label>
                         <input type="email" class="form-control" id="email" name="email" required>
@@ -19,22 +23,20 @@
                         <label for="password" class="form-label">Password</label>
                         <input type="password" class="form-control" id="password" name="password" required>
                     </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="remember" id="remember">
-                        <label class="form-check-label" for="remember">
-                            Ricordami
-                        </label>
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Conferma Password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
                     </div>
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-sign-in-alt me-2"></i>
-                            Accedi
+                            <i class="fas fa-user-plus me-2"></i>
+                            Registrati
                         </button>
                     </div>
                 </form>
                 
                 <div class="mt-4 text-center">
-                    <p>Non hai un account? <a href="{{ url_for('register') }}">Registrati</a></p>
+                    <p>Hai già un account? <a href="{{ url_for('login') }}">Accedi</a></p>
                 </div>
             </div>
         </div>

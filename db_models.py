@@ -125,7 +125,7 @@ class Backtest(db.Model):
     win_rate = db.Column(db.Float)
     profit_factor = db.Column(db.Float)
     
-    # Results storage
+    # Store data as JSON
     equity_curve = db.Column(db.JSON)  # Store equity curve as JSON
     trades = db.Column(db.JSON)  # Store trades as JSON
     

@@ -1,64 +1,66 @@
 {% extends "layout.html" %}
 
-{% block title %}Data Analysis{% endblock %}
+{% block title %}Analisi Dati{% endblock %}
 
-{% block page_header %}Data Analysis{% endblock %}
+{% block page_header %}Analisi Dati{% endblock %}
 
 {% block page_description %}
-Analyze your cryptocurrency data and view basic statistics
+Visualizza e analizza i dati di mercato delle criptovalute
 {% endblock %}
 
 {% block content %}
+<!-- Dataset Selection -->
+{% if user_datasets %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Seleziona Dataset</h5>
+    </div>
+    <div class="card-body">
+        <form method="GET" id="datasetForm">
+            <div class="row align-items-end">
+                <div class="col-md-8 mb-3 mb-md-0">
+                    <label for="dataset_select" class="form-label">Dataset</label>
+                    <select class="form-select" id="dataset_select" name="dataset_id" onchange="this.form.submit()">
+                        {% for dataset in user_datasets %}
+                        <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                            {{ dataset.name }} ({{ dataset.symbol }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary d-block">
+                        <i class="fas fa-upload me-2"></i>
+                        Carica Nuovo Dataset
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Data Summary & Chart -->
 <div class="row">
     <div class="col-lg-8">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Price Chart</h5>
+                <h5 class="mb-0">Grafico Prezzi - {{ summary.symbol }}</h5>
             </div>
             <div class="card-body">
-                <div class="text-center">
-                    <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid rounded" alt="Price Chart">
+                {% if chart_data %}
+                <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid rounded" alt="Price Chart">
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Impossibile generare il grafico: dati insufficienti o formato non valido.
                 </div>
-            </div>
-        </div>
-        
-        <div class="card shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">Data Summary</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>File Information</h6>
-                        <table class="table table-sm">
-                            <tbody>
-                                <tr>
-                                    <th>Filename:</th>
-                                    <td>{{ summary.filename }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Rows:</th>
-                                    <td>{{ summary.rows }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Start Date:</th>
-                                    <td>{{ summary.start }}</td>
-                                </tr>
-                                <tr>
-                                    <th>End Date:</th>
-                                    <td>{{ summary.end }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Available Columns</h6>
-                        <div class="d-flex flex-wrap">
-                            {% for column in summary.columns %}
-                            <span class="badge bg-primary me-2 mb-2 py-2 px-3">{{ column }}</span>
-                            {% endfor %}
-                        </div>
-                    </div>
+                {% endif %}
+                
+                <div class="mt-4 d-flex justify-content-end">
+                    <a href="{{ url_for('indicators', dataset_id=selected_dataset.id) }}" class="btn btn-primary">
+                        <i class="fas fa-chart-line me-2"></i>
+                        Calcola Indicatori
+                    </a>
                 </div>
             </div>
         </div>
@@ -67,73 +69,169 @@ Analyze your cryptocurrency data and view basic statistics
     <div class="col-lg-4">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-chart-bar me-2"></i>
-                    Price Statistics
-                </h5>
+                <h5 class="mb-0">Informazioni Dataset</h5>
             </div>
             <div class="card-body">
                 <table class="table">
                     <tbody>
                         <tr>
-                            <th>Minimum Price:</th>
-                            <td class="text-end">${{ stats.min|round(2) }}</td>
+                            <th>Nome:</th>
+                            <td>{{ summary.filename }}</td>
                         </tr>
                         <tr>
-                            <th>Maximum Price:</th>
-                            <td class="text-end">${{ stats.max|round(2) }}</td>
+                            <th>Simbolo:</th>
+                            <td>{{ summary.symbol }}</td>
                         </tr>
                         <tr>
-                            <th>Average Price:</th>
-                            <td class="text-end">${{ stats.mean|round(2) }}</td>
+                            <th>Righe:</th>
+                            <td>{{ summary.rows }}</td>
                         </tr>
                         <tr>
-                            <th>Standard Deviation:</th>
-                            <td class="text-end">${{ stats.std|round(2) }}</td>
+                            <th>Colonne:</th>
+                            <td>{{ summary.columns|join(', ') }}</td>
                         </tr>
                         <tr>
-                            <th>Median Price:</th>
-                            <td class="text-end">${{ stats.median|round(2) }}</td>
+                            <th>Data inizio:</th>
+                            <td>{{ summary.start }}</td>
                         </tr>
                         <tr>
-                            <th>Current Price:</th>
-                            <td class="text-end">${{ stats.last|round(2) }}</td>
-                        </tr>
-                        <tr>
-                            <th>Overall Change:</th>
-                            <td class="text-end {% if stats.change > 0 %}text-success{% elif stats.change < 0 %}text-danger{% endif %}">
-                                {{ stats.change|round(2) }}%
-                            </td>
+                            <th>Data fine:</th>
+                            <td>{{ summary.end }}</td>
                         </tr>
                     </tbody>
                 </table>
+                
+                {% if summary.description %}
+                <div class="mt-3">
+                    <h6>Descrizione:</h6>
+                    <p>{{ summary.description }}</p>
+                </div>
+                {% endif %}
             </div>
         </div>
         
+        {% if stats %}
         <div class="card shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-arrow-right me-2"></i>
-                    Next Steps
-                </h5>
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Statistiche Prezzo</h5>
             </div>
             <div class="card-body">
-                <div class="d-grid gap-3">
-                    <a href="{{ url_for('indicators') }}" class="btn btn-primary">
-                        <i class="fas fa-chart-line me-2"></i>
-                        Calculate Technical Indicators
-                    </a>
-                    <a href="{{ url_for('backtest') }}" class="btn btn-success">
-                        <i class="fas fa-sync-alt me-2"></i>
-                        Run Backtest
-                    </a>
-                    <a href="{{ url_for('models') }}" class="btn btn-info">
-                        <i class="fas fa-brain me-2"></i>
-                        Train ML Models
-                    </a>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center">
+                            <div class="text-muted small">Min</div>
+                            <h5 class="mb-0">{{ stats.min|round(2) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center">
+                            <div class="text-muted small">Max</div>
+                            <h5 class="mb-0">{{ stats.max|round(2) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center">
+                            <div class="text-muted small">Media</div>
+                            <h5 class="mb-0">{{ stats.mean|round(2) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center">
+                            <div class="text-muted small">Mediana</div>
+                            <h5 class="mb-0">{{ stats.median|round(2) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center">
+                            <div class="text-muted small">Dev. Standard</div>
+                            <h5 class="mb-0">{{ stats.std|round(2) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-3 text-center {% if stats.change > 0 %}bg-success bg-opacity-10{% elif stats.change < 0 %}bg-danger bg-opacity-10{% endif %}">
+                            <div class="text-muted small">Variazione</div>
+                            <h5 class="mb-0 {% if stats.change > 0 %}text-success{% elif stats.change < 0 %}text-danger{% endif %}">
+                                {{ stats.change|round(2) }}%
+                            </h5>
+                        </div>
+                    </div>
                 </div>
+                
+                <div class="mt-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Ultimo prezzo</span>
+                        <h4>{{ stats.last|round(2) }}</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-4">
+                <i class="fas fa-chart-line fa-3x mb-3 text-primary"></i>
+                <h5>Indicatori Tecnici</h5>
+                <p>Calcola e visualizza indicatori tecnici sul dataset</p>
+                <a href="{{ url_for('indicators', dataset_id=selected_dataset.id) }}" class="btn btn-primary">
+                    <i class="fas fa-arrow-right me-2"></i>
+                    Calcola Indicatori
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-4">
+                <i class="fas fa-sync-alt fa-3x mb-3 text-success"></i>
+                <h5>Backtest Strategie</h5>
+                <p>Testa strategie di trading sui dati storici</p>
+                <a href="{{ url_for('backtest', dataset_id=selected_dataset.id) }}" class="btn btn-success">
+                    <i class="fas fa-arrow-right me-2"></i>
+                    Esegui Backtest
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-4">
+                <i class="fas fa-brain fa-3x mb-3 text-warning"></i>
+                <h5>Modelli Predittivi</h5>
+                <p>Addestra modelli di machine learning per previsioni</p>
+                <a href="{{ url_for('models', dataset_id=selected_dataset.id) }}" class="btn btn-warning">
+                    <i class="fas fa-arrow-right me-2"></i>
+                    Modelli ML
+                </a>
             </div>
         </div>
     </div>
 </div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    Non hai ancora caricato nessun dataset.
+    <a href="{{ url_for('upload') }}" class="btn btn-primary ms-3">
+        <i class="fas fa-upload me-2"></i>
+        Carica Dataset
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-submit form when dataset selection changes
+        document.getElementById('dataset_select').addEventListener('change', function() {
+            document.getElementById('datasetForm').submit();
+        });
+    });
+</script>
 {% endblock %}
