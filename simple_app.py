@@ -13,12 +13,18 @@ import matplotlib.pyplot as plt
 import io
 import base64
 import uuid
+import math
+import random
+import json
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from functools import wraps
+
+# Importa il gestore dell'addestramento
+import training_handler
 
 # Patch per risolvere il problema con optimize=True in savefig
 # Questa è una soluzione più completa che intercetta anche le chiamate interne
@@ -1373,6 +1379,126 @@ def backtest():
     return render_template('backtest.html',
                           user_datasets=user_datasets,
                           selected_dataset=selected_dataset)
+
+@app.route('/training-visualizer/<string:training_id>')
+def training_visualizer(training_id):
+    """Pagina del visualizzatore interattivo di addestramento"""
+    # Otteniamo l'utente corrente
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Ottieni i dati della sessione di addestramento
+    training_session = training_handler.get_training_session(training_id)
+    
+    if not training_session:
+        flash('Sessione di addestramento non trovata.', 'warning')
+        return redirect(url_for('models'))
+    
+    # Converti la sessione in un dizionario
+    training_data = training_session.to_dict()
+    
+    # Ottieni i dataset dell'utente per il menu
+    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
+    
+    return render_template(
+        'models_training.html',
+        user_datasets=user_datasets,
+        training_id=training_id,
+        model_type=training_data['model_type'],
+        model_name=training_data['model_name'],
+        dataset_id=training_data['dataset_id'],
+        dataset_name=training_data['dataset_name'],
+        epochs=training_data['epochs'],
+        batch_size=training_data['batch_size'],
+        lookback=training_data['lookback'],
+        learning_rate=training_data['learning_rate'],
+        device=training_data['device'],
+        demo_mode=training_data['demo_mode']
+    )
+
+@app.route('/training-progress/<string:training_id>')
+def training_progress(training_id):
+    """Endpoint SSE per gli aggiornamenti in tempo reale dell'addestramento"""
+    # Verifica che l'utente sia autenticato
+    user = get_current_user()
+    if not user:
+        return Response(json.dumps({'error': 'Not authenticated'}), 
+                      content_type='application/json',
+                      status=401)
+    
+    # Ottieni la sessione di addestramento
+    training_session = training_handler.get_training_session(training_id)
+    if not training_session:
+        return Response(json.dumps({'error': 'Training session not found'}), 
+                      content_type='application/json',
+                      status=404)
+    
+    def event_stream():
+        # Invia un evento iniziale
+        yield f"event: connection_established\ndata: {json.dumps({'training_id': training_id})}\n\n"
+        
+        # Avvia l'addestramento se non è già in esecuzione
+        if training_session.status == 'initialized':
+            training_handler.start_training(training_id)
+            yield f"event: training_started\ndata: {json.dumps({'message': 'Addestramento avviato'})}\n\n"
+        
+        # Memorizza l'ultimo timestamp processato
+        last_processed = 0
+        
+        # Loop per inviare aggiornamenti
+        while training_session.status in ['initialized', 'running']:
+            # Ottieni nuovi eventi
+            events = training_session.get_events(since=last_processed)
+            
+            # Invia gli eventi al client
+            for event in events:
+                last_processed = event['timestamp']
+                yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+            
+            # Breve pausa per evitare di sovraccaricare il server
+            import time
+            time.sleep(0.5)
+        
+        # Invia eventi finali se necessario
+        if training_session.status == 'completed':
+            completion_data = {
+                'total_time': training_session.end_time - training_session.start_time,
+                'final_loss': training_session.train_loss,
+                'metrics': training_session.metrics
+            }
+            yield f"event: training_complete\ndata: {json.dumps(completion_data)}\n\n"
+        elif training_session.status in ['error', 'stopped']:
+            yield f"event: training_error\ndata: {json.dumps({'error': 'Addestramento interrotto o terminato con errori'})}\n\n"
+    
+    return Response(stream_with_context(event_stream()), 
+                   content_type='text/event-stream',
+                   headers={'Cache-Control': 'no-cache', 
+                            'X-Accel-Buffering': 'no'})
+
+@app.route('/stop-training', methods=['POST'])
+def stop_training():
+    """Interrompe una sessione di addestramento in corso"""
+    # Verifica che l'utente sia autenticato
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Non autenticato'})
+    
+    # Ottieni l'ID dell'addestramento dalla richiesta
+    data = request.get_json()
+    training_id = data.get('training_id')
+    
+    if not training_id:
+        return jsonify({'success': False, 'error': 'ID dell\'addestramento non specificato'})
+    
+    # Interrompi l'addestramento
+    success = training_handler.stop_training(training_id)
+    
+    if success:
+        return jsonify({'success': True, 'message': 'Addestramento interrotto con successo'})
+    else:
+        return jsonify({'success': False, 'error': 'Impossibile interrompere l\'addestramento'})
 
 @app.route('/models', methods=['GET', 'POST'])
 def models():

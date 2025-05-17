@@ -1,0 +1,422 @@
+{% extends "layout.html" %}
+
+{% block title %}Addestramento Modello Interattivo - {{ model_type }}{% endblock %}
+
+{% block styles %}
+<style>
+    .training-container {
+        background-color: var(--bs-dark);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 400px;
+        margin-bottom: 20px;
+    }
+    
+    .training-status {
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+    }
+    
+    .model-params {
+        background-color: var(--bs-gray-800);
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .param-label {
+        font-weight: bold;
+        color: var(--bs-primary);
+    }
+    
+    .control-panel {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+    }
+    
+    .metrics-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+    }
+    
+    .metric-card {
+        background: var(--bs-gray-800);
+        border-left: 4px solid var(--bs-primary);
+        padding: 15px;
+        border-radius: 5px;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--bs-light);
+    }
+    
+    .metric-label {
+        font-size: 0.9rem;
+        color: var(--bs-gray-400);
+    }
+    
+    #log-container {
+        height: 200px;
+        overflow-y: auto;
+        background-color: var(--bs-gray-800);
+        border-radius: 5px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 0.9rem;
+        color: var(--bs-light);
+    }
+    
+    @media (max-width: 768px) {
+        .chart-container {
+            height: 300px;
+        }
+        
+        .metrics-container {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Addestramento Modello Interattivo</h2>
+                <a href="{{ url_for('models', dataset_id=dataset_id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Torna ai Modelli
+                </a>
+            </div>
+            
+            <div class="training-container" id="training-progress-container" data-training-id="{{ training_id }}">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h4 class="mb-3">{{ model_name }} - Progresso Addestramento</h4>
+                        <div class="model-params">
+                            <div class="row">
+                                <div class="col-md-3 col-6">
+                                    <div class="mb-2">
+                                        <span class="param-label">Dataset:</span>
+                                        <div>{{ dataset_name }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="mb-2">
+                                        <span class="param-label">Tipo:</span>
+                                        <div>{{ model_type }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="mb-2">
+                                        <span class="param-label">Epoche:</span>
+                                        <div>{{ epochs }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="mb-2">
+                                        <span class="param-label">Lookback:</span>
+                                        <div>{{ lookback }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h5 class="mb-0">Stato Addestramento</h5>
+                                <button class="btn btn-sm btn-danger" id="stop-training-btn">
+                                    <i class="bi bi-stop-circle"></i> Interrompi
+                                </button>
+                            </div>
+                            <div class="training-status" id="training-status">In preparazione...</div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                                     id="training-progress-bar" 
+                                     role="progressbar" 
+                                     aria-valuenow="0" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100" 
+                                     style="width: 0%">0%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="metrics-container">
+                            <div class="metric-card">
+                                <div class="metric-value" id="current-epoch">0</div>
+                                <div class="metric-label">Epoca Corrente</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="current-loss">-</div>
+                                <div class="metric-label">Loss Corrente</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="time-elapsed">0s</div>
+                                <div class="metric-label">Tempo Trascorso</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="time-remaining">-</div>
+                                <div class="metric-label">Tempo Rimanente</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="chart-container">
+                            <canvas id="loss-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h5>Log Addestramento</h5>
+                        <div id="log-container">
+                            <div id="training-log"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.8.0/dist/chart.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Elementi DOM
+        const trainingStatusElement = document.getElementById('training-status');
+        const trainingProgressBar = document.getElementById('training-progress-bar');
+        const trainingLogElement = document.getElementById('training-log');
+        const currentEpochElement = document.getElementById('current-epoch');
+        const currentLossElement = document.getElementById('current-loss');
+        const timeElapsedElement = document.getElementById('time-elapsed');
+        const timeRemainingElement = document.getElementById('time-remaining');
+        const stopTrainingBtn = document.getElementById('stop-training-btn');
+        
+        // Configurazione grafico
+        const ctx = document.getElementById('loss-chart').getContext('2d');
+        const lossChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Training Loss',
+                        data: [],
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderWidth: 2,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Validation Loss',
+                        data: [],
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        borderWidth: 2,
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Epoca'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Loss'
+                        },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: 'Andamento Loss Durante Training'
+                    }
+                },
+                animation: {
+                    duration: 500
+                }
+            }
+        });
+        
+        // Funzione per formattare il tempo
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return Math.round(seconds) + 's';
+            } else if (seconds < 3600) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.round(seconds % 60);
+                return mins + 'm ' + secs + 's';
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const mins = Math.floor((seconds % 3600) / 60);
+                return hours + 'h ' + mins + 'm';
+            }
+        }
+        
+        // Aggiungere al log
+        function appendToLog(message) {
+            if (trainingLogElement) {
+                const timestamp = new Date().toLocaleTimeString();
+                trainingLogElement.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                const logContainer = document.getElementById('log-container');
+                if (logContainer) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            }
+        }
+        
+        // EventSource per SSE
+        const trainingId = "{{ training_id }}";
+        const eventSource = new EventSource(`/training-progress/${trainingId}`);
+        
+        // Evento di connessione stabilita
+        eventSource.onopen = function() {
+            appendToLog("Connessione stabilita con il server");
+            trainingStatusElement.textContent = "Connessione stabilita, in attesa di dati...";
+        };
+        
+        // Evento di aggiornamento epoca
+        eventSource.addEventListener('epoch_update', function(e) {
+            const data = JSON.parse(e.data);
+            
+            // Aggiorna elementi UI
+            currentEpochElement.textContent = data.epoch;
+            currentLossElement.textContent = data.train_loss.toFixed(6);
+            timeElapsedElement.textContent = formatTime(data.elapsed_time);
+            
+            if (data.estimated_remaining_time !== null) {
+                timeRemainingElement.textContent = formatTime(data.estimated_remaining_time);
+            }
+            
+            // Aggiorna progressbar
+            const progress = (data.epoch / data.total_epochs) * 100;
+            trainingProgressBar.style.width = progress + '%';
+            trainingProgressBar.textContent = Math.round(progress) + '%';
+            trainingProgressBar.setAttribute('aria-valuenow', progress);
+            
+            // Aggiorna grafico
+            lossChart.data.labels.push(data.epoch);
+            lossChart.data.datasets[0].data.push(data.train_loss);
+            lossChart.data.datasets[1].data.push(data.val_loss);
+            lossChart.update();
+            
+            // Aggiorna log
+            appendToLog(`Epoca ${data.epoch}/${data.total_epochs}: Train Loss=${data.train_loss.toFixed(6)}, Val Loss=${data.val_loss.toFixed(6)}`);
+            
+            // Aggiorna status
+            trainingStatusElement.textContent = `Addestramento in corso: Epoca ${data.epoch}/${data.total_epochs}`;
+        });
+        
+        // Evento di completamento
+        eventSource.addEventListener('training_complete', function(e) {
+            const data = JSON.parse(e.data);
+            
+            // Aggiorna UI
+            trainingStatusElement.textContent = `Addestramento completato! Loss finale: ${data.final_loss.toFixed(6)}`;
+            trainingProgressBar.style.width = '100%';
+            trainingProgressBar.textContent = '100%';
+            trainingProgressBar.setAttribute('aria-valuenow', 100);
+            timeElapsedElement.textContent = formatTime(data.total_time);
+            timeRemainingElement.textContent = '0s';
+            
+            // Aggiorna log
+            appendToLog(`Addestramento completato in ${formatTime(data.total_time)}! Loss finale: ${data.final_loss.toFixed(6)}`);
+            
+            // Chiudi la connessione
+            eventSource.close();
+            
+            // Disabilita pulsante stop
+            if (stopTrainingBtn) {
+                stopTrainingBtn.disabled = true;
+            }
+        });
+        
+        // Errore nell'addestramento
+        eventSource.addEventListener('training_error', function(e) {
+            const data = JSON.parse(e.data);
+            trainingStatusElement.textContent = `Errore: ${data.error}`;
+            appendToLog(`ERRORE: ${data.error}`);
+            eventSource.close();
+        });
+        
+        // Gestione errori generici
+        eventSource.onerror = function(e) {
+            console.error('Errore nella connessione SSE:', e);
+            appendToLog("Errore nella connessione al server");
+            
+            // Chiudi se necessario
+            if (eventSource.readyState === 2) { // CLOSED
+                eventSource.close();
+            }
+        };
+        
+        // Gestione pulsante stop
+        if (stopTrainingBtn) {
+            stopTrainingBtn.addEventListener('click', function() {
+                if (confirm('Sei sicuro di voler interrompere l\'addestramento?')) {
+                    fetch('/stop-training', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ training_id: trainingId })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            appendToLog("Richiesta di interruzione inviata");
+                            trainingStatusElement.textContent = "Interruzione in corso...";
+                        } else {
+                            appendToLog(`Errore: ${data.error}`);
+                            alert(`Errore: ${data.error}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Errore:', error);
+                        appendToLog("Errore nell'invio della richiesta di interruzione");
+                    });
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
