@@ -28,9 +28,14 @@ from functools import wraps
 from utils.telegram_notification import send_price_alert, send_balance_update
 from utils.exchange_api import get_account_balances, ExchangeAPIError
 from utils.exchange_data_fetcher import get_historical_data, get_available_symbols, save_historical_data
+from utils.sentiment_analyzer import SentimentAnalyzer, generate_sample_news_data
 
 # Importa il gestore dell'addestramento
 import training_handler
+
+# Importa le strategie e l'ottimizzatore
+from strategies.custom_strategy import CustomStrategy, CustomStrategyBuilder, TradingSignal
+from strategies.strategy_optimizer import StrategyOptimizer
 
 # Patch per risolvere il problema con optimize=True in savefig
 # Questa è una soluzione più completa che intercetta anche le chiamate interne
