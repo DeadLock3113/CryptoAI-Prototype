@@ -953,12 +953,24 @@ def backtest():
             current_position = 0
             current_capital = initial_capital
             trades = []
+            entry_price = 0
+            entry_date = None
+            
+            # Debug
+            logger.debug(f"Starting backtest with capital: {current_capital}")
+            signals_count = backtest_data[backtest_data['signal'] != 0].shape[0]
+            logger.debug(f"Total signals in dataset: {signals_count}")
             
             for idx, row in backtest_data.iterrows():
                 # Check for signals
                 if row['signal'] == 1 and current_position == 0:  # Buy signal and no position
                     # Calculate shares to buy (all in)
                     price = row['close']
+                    
+                    # Avoid division by zero or very small prices
+                    if price <= 0.0001:
+                        continue
+                        
                     shares = current_capital / price  # All-in approach
                     cost = shares * price * (1 + commission_rate)  # Include commission
                     
@@ -970,12 +982,15 @@ def backtest():
                         # Record trade entry
                         trades.append({
                             'type': 'buy',
-                            'date': entry_date.strftime('%Y-%m-%d %H:%M:%S'),
-                            'price': entry_price,
-                            'shares': shares,
-                            'value': shares * entry_price,
-                            'commission': shares * entry_price * commission_rate
+                            'date': str(entry_date),
+                            'price': float(entry_price),
+                            'shares': float(shares),
+                            'value': float(shares * entry_price),
+                            'commission': float(shares * entry_price * commission_rate)
                         })
+                        
+                        # Debug
+                        logger.debug(f"BUY at {idx}: price={price}, shares={shares}, capital={current_capital}")
                 
                 elif (row['signal'] == -1 or idx == backtest_data.index[-1]) and current_position > 0:  # Sell signal or end of data
                     # Sell position
@@ -983,27 +998,34 @@ def backtest():
                     shares = current_position
                     value = shares * price
                     commission = value * commission_rate
-                    profit = value - (shares * entry_price) - commission - (shares * entry_price * commission_rate)
+                    buy_commission = shares * entry_price * commission_rate
+                    profit = value - (shares * entry_price) - commission - buy_commission
                     
-                    current_capital += value - commission
+                    # Update capital
+                    current_capital = current_capital + profit
                     current_position = 0
                     
                     # Record trade exit
                     exit_date = idx
                     trades.append({
                         'type': 'sell',
-                        'date': exit_date.strftime('%Y-%m-%d %H:%M:%S'),
-                        'price': price,
-                        'shares': shares,
-                        'value': value,
-                        'commission': commission,
-                        'profit': profit,
-                        'profit_pct': (profit / (shares * entry_price)) * 100
+                        'date': str(exit_date),
+                        'price': float(price),
+                        'shares': float(shares),
+                        'value': float(value),
+                        'commission': float(commission),
+                        'profit': float(profit),
+                        'profit_pct': float((profit / (shares * entry_price)) * 100)
                     })
+                    
+                    # Debug
+                    logger.debug(f"SELL at {idx}: price={price}, shares={shares}, profit={profit}, new capital={current_capital}")
                 
                 # Update equity for this row
                 if current_position > 0:
-                    equity = current_capital - (current_position * entry_price * commission_rate) + (current_position * row['close'])
+                    # Current value of position minus commissions
+                    position_value = current_position * row['close']
+                    equity = (current_capital - (current_position * entry_price)) + position_value
                 else:
                     equity = current_capital
                 
@@ -1116,7 +1138,7 @@ def backtest():
                           user_datasets=user_datasets,
                           selected_dataset=selected_dataset)
 
-@app.route('/models')
+@app.route('/models', methods=['GET', 'POST'])
 def models():
     """ML Models page"""
     # Check if user is logged in
@@ -1128,7 +1150,251 @@ def models():
     # Get user's datasets
     user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
     
-    return render_template('models.html', user_datasets=user_datasets)
+    # Get selected dataset if provided
+    dataset_id = request.args.get('dataset_id', type=int) or request.form.get('dataset_id', type=int)
+    selected_dataset = None
+    
+    if dataset_id:
+        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+    
+    # Check for GPU availability
+    try:
+        import tensorflow as tf
+        gpu_available = len(tf.config.list_physical_devices('GPU')) > 0
+        if gpu_available:
+            # Enable memory growth to avoid allocating all GPU memory
+            for gpu in tf.config.list_physical_devices('GPU'):
+                tf.config.experimental.set_memory_growth(gpu, True)
+            gpu_info = tf.config.list_physical_devices('GPU')[0].device_type
+            logger.debug(f"GPU detected: {gpu_info}")
+        else:
+            logger.debug("No GPU available, using CPU")
+    except Exception as e:
+        gpu_available = False
+        logger.debug(f"Error checking GPU availability: {str(e)}")
+    
+    # Handle POST request to train model
+    if request.method == 'POST' and selected_dataset:
+        try:
+            # Get model parameters
+            model_type = request.form.get('model_type')
+            lookback = int(request.form.get('lookback', 30))
+            epochs = int(request.form.get('epochs', 50))
+            batch_size = int(request.form.get('batch_size', 32))
+            test_size = float(request.form.get('test_size', 0.2)) / 100.0  # Convert from percentage
+            
+            if not model_type:
+                flash('Seleziona un tipo di modello da addestrare.', 'warning')
+                return redirect(url_for('models', dataset_id=dataset_id))
+            
+            # Load dataset
+            data = load_dataset(selected_dataset.id)
+            
+            if data is None:
+                flash('Impossibile caricare il dataset. File non trovato.', 'danger')
+                return redirect(url_for('models'))
+            
+            # Check if 'close' column exists
+            if 'close' not in data.columns:
+                flash('Colonna "close" mancante nel dataset. Questo campo è richiesto per i modelli ML.', 'danger')
+                return redirect(url_for('models', dataset_id=dataset_id))
+            
+            # Use only 'close' price for prediction
+            import numpy as np
+            data_price = np.array(data['close']).reshape(-1, 1)
+            
+            # Normalize data
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler(feature_range=(0, 1))
+            data_normalized = scaler.fit_transform(data_price)
+            
+            # Create sequences for training
+            X = []
+            y = []
+            for i in range(len(data_normalized) - lookback):
+                X.append(data_normalized[i:i+lookback])
+                y.append(data_normalized[i+lookback])
+            
+            X = np.array(X)
+            y = np.array(y)
+            
+            # Split data into training and testing sets
+            from sklearn.model_selection import train_test_split
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
+            
+            # Define model builder function first
+            def build_model(model_type, lookback):
+                import tensorflow as tf
+                from tensorflow.keras.models import Sequential
+                from tensorflow.keras.layers import Dense, LSTM, Dropout, SimpleRNN, GRU
+                from tensorflow.keras.optimizers import Adam
+                
+                model = Sequential()
+                model_name = ""
+                
+                if model_type == 'lstm':
+                    model.add(LSTM(units=50, return_sequences=True, input_shape=(lookback, 1)))
+                    model.add(Dropout(0.2))
+                    model.add(LSTM(units=50, return_sequences=False))
+                    model.add(Dropout(0.2))
+                    model.add(Dense(units=1))
+                    model_name = "LSTM"
+                    
+                elif model_type == 'rnn':
+                    model.add(SimpleRNN(units=50, return_sequences=True, input_shape=(lookback, 1)))
+                    model.add(Dropout(0.2))
+                    model.add(SimpleRNN(units=50, return_sequences=False))
+                    model.add(Dropout(0.2))
+                    model.add(Dense(units=1))
+                    model_name = "RNN semplice"
+                    
+                elif model_type == 'gru':
+                    model.add(GRU(units=50, return_sequences=True, input_shape=(lookback, 1)))
+                    model.add(Dropout(0.2))
+                    model.add(GRU(units=50, return_sequences=False))
+                    model.add(Dropout(0.2))
+                    model.add(Dense(units=1))
+                    model_name = "GRU"
+                
+                else:
+                    return None, None
+                
+                model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
+                return model, model_name
+            
+            # Initialize model
+            import tensorflow as tf
+            from tensorflow.keras.callbacks import EarlyStopping
+            
+            # Set device placement (CPU/GPU)
+            if gpu_available:
+                with tf.device('/GPU:0'):
+                    logger.debug("Building model on GPU")
+                    model, model_name = build_model(model_type, lookback)
+            else:
+                with tf.device('/CPU:0'):
+                    logger.debug("Building model on CPU")
+                    model, model_name = build_model(model_type, lookback)
+            
+            if model is None:
+                flash('Tipo di modello non riconosciuto.', 'danger')
+                return redirect(url_for('models', dataset_id=dataset_id))
+            
+            # Train model with early stopping
+            early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+            
+            # Training message
+            logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples")
+            
+            history = model.fit(
+                X_train, y_train,
+                epochs=epochs,
+                batch_size=batch_size,
+                validation_data=(X_test, y_test),
+                callbacks=[early_stopping],
+                verbose=1
+            )
+            
+            # Make predictions
+            y_pred = model.predict(X_test)
+            
+            # Inverse transform the predictions and actual values
+            y_test_actual = scaler.inverse_transform(y_test)
+            y_pred_actual = scaler.inverse_transform(y_pred)
+            
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            mse = mean_squared_error(y_test_actual, y_pred_actual)
+            rmse = np.sqrt(mse)
+            mae = mean_absolute_error(y_test_actual, y_pred_actual)
+            r2 = r2_score(y_test_actual, y_pred_actual)
+            
+            # Generate forecast plot
+            plt.figure(figsize=(12, 6))
+            
+            # Plot actual vs predicted on test set
+            test_dates = data.index[-len(y_test):]
+            plt.plot(test_dates, y_test_actual, label='Valori Reali')
+            plt.plot(test_dates, y_pred_actual, label='Previsioni')
+            
+            plt.title(f"Previsione Prezzo - Modello {model_name}")
+            plt.xlabel('Data')
+            plt.ylabel('Prezzo')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            
+            # Save plot to buffer
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100)
+            buffer.seek(0)
+            
+            # Convert plot to base64 for embedding in HTML
+            chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close()
+            
+            # Generate loss plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(history.history['loss'], label='Training Loss')
+            plt.plot(history.history['val_loss'], label='Validation Loss')
+            plt.title('Training and Validation Loss')
+            plt.xlabel('Epochs')
+            plt.ylabel('Loss (MSE)')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            
+            # Save loss plot to buffer
+            loss_buffer = io.BytesIO()
+            plt.savefig(loss_buffer, format='png', dpi=100)
+            loss_buffer.seek(0)
+            
+            # Convert plot to base64 for embedding in HTML
+            loss_chart_data = base64.b64encode(loss_buffer.getvalue()).decode('utf-8')
+            plt.close()
+            
+            # Save model
+            import os
+            model_dir = os.path.join(os.getcwd(), 'models/saved')
+            os.makedirs(model_dir, exist_ok=True)
+            model_path = os.path.join(model_dir, f"{selected_dataset.symbol}_{model_type}_{lookback}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5")
+            model.save(model_path)
+            
+            # Prepare results
+            results = {
+                'model_type': model_type,
+                'model_name': model_name,
+                'lookback': lookback,
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'test_size': test_size * 100,  # Convert back to percentage
+                'mse': mse,
+                'rmse': rmse,
+                'mae': mae,
+                'r2': r2,
+                'trained_epochs': len(history.history['loss']),
+                'model_path': model_path,
+                'gpu_used': gpu_available
+            }
+            
+            # Store in session for potential reuse
+            session['model_results'] = results
+            
+            # Return results template
+            return render_template('models_result.html',
+                                 user_datasets=user_datasets,
+                                 selected_dataset=selected_dataset,
+                                 results=results,
+                                 chart_data=chart_data,
+                                 loss_chart_data=loss_chart_data)
+            
+        except Exception as e:
+            logger.error(f"Errore durante il training del modello: {str(e)}")
+            flash(f'Errore durante il training del modello: {str(e)}', 'danger')
+            return redirect(url_for('models', dataset_id=dataset_id))
+    
+    return render_template('models.html', 
+                          user_datasets=user_datasets,
+                          selected_dataset=selected_dataset,
+                          gpu_available=gpu_available)
 
 @app.route('/clear_data')
 def clear_data():
