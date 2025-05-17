@@ -315,12 +315,43 @@ def upload():
             flash('Solo file CSV sono supportati', 'danger')
             return redirect(request.url)
             
-        # Get form data
+        # Check if this is a delete request
+        if 'delete_dataset' in request.form:
+            dataset_id = request.form.get('delete_dataset')
+            dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+            
+            if dataset:
+                try:
+                    # Delete associated file if it exists
+                    if dataset.file_path and os.path.exists(dataset.file_path):
+                        os.remove(dataset.file_path)
+                    
+                    # Delete from database
+                    db.session.delete(dataset)
+                    db.session.commit()
+                    
+                    flash(f'Dataset "{dataset.name}" eliminato con successo.', 'success')
+                except Exception as e:
+                    logger.error(f"Error deleting dataset: {str(e)}")
+                    db.session.rollback()
+                    flash(f'Errore durante l\'eliminazione del dataset: {str(e)}', 'danger')
+            else:
+                flash('Dataset non trovato o non hai i permessi per eliminarlo.', 'warning')
+            
+            return redirect(url_for('upload'))
+            
+        # Get form data for file upload
         name = request.form['name']
         symbol = request.form['symbol']
         description = request.form.get('description', '')
         date_format = request.form.get('date_format', 'auto')
         delimiter = request.form.get('delimiter', ',')
+        
+        # Check for duplicate dataset name
+        existing_dataset = Dataset.query.filter_by(name=name, user_id=user.id).first()
+        if existing_dataset:
+            flash(f'Esiste già un dataset con il nome "{name}". Scegli un nome diverso.', 'warning')
+            return redirect(request.url)
         
         # Save the file with a unique name
         try:

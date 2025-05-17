@@ -70,6 +70,54 @@
             </form>
         </div>
         
+        {% if user_datasets %}
+        <div class="dashboard-card mt-4">
+            <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                <h3 class="dashboard-card-title mb-0">I tuoi Dataset</h3>
+                <span class="badge bg-secondary">{{ user_datasets|length }}</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Simbolo</th>
+                            <th>Righe</th>
+                            <th>Periodo</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dataset in user_datasets %}
+                        <tr>
+                            <td>{{ dataset.name }}</td>
+                            <td>{{ dataset.symbol }}</td>
+                            <td>{{ dataset.rows_count }}</td>
+                            <td>
+                                {% if dataset.start_date and dataset.end_date %}
+                                {{ dataset.start_date.strftime('%d/%m/%Y') }} - {{ dataset.end_date.strftime('%d/%m/%Y') }}
+                                {% else %}
+                                N/A
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('analysis', dataset_id=dataset.id) }}" class="btn btn-outline-primary">Analizza</a>
+                                    <form method="post" class="d-inline" onsubmit="return confirm('Sei sicuro di voler eliminare questo dataset? Questa azione non può essere annullata.');">
+                                        <input type="hidden" name="delete_dataset" value="{{ dataset.id }}">
+                                        <button type="submit" class="btn btn-outline-danger">Elimina</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        
         <div class="dashboard-card mt-4">
             <div class="dashboard-card-header">
                 <h3 class="dashboard-card-title">Requisiti del File CSV</h3>
