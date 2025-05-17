@@ -1812,8 +1812,8 @@ def models():
             
             # Generate loss plot
             plt.figure(figsize=(10, 6))
-            plt.plot(history.history['loss'], label='Training Loss')
-            plt.plot(history.history['val_loss'], label='Validation Loss')
+            plt.plot(history['loss'], label='Training Loss')
+            plt.plot(history['val_loss'], label='Validation Loss')
             plt.title('Training and Validation Loss')
             plt.xlabel('Epochs')
             plt.ylabel('Loss (MSE)')
