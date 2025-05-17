@@ -913,6 +913,35 @@ def backtest():
                 
                 strategy_name = f"Triple SMA Strategy (Short: {sma_short}, Medium: {sma_medium}, Long: {sma_long})"
                 
+            elif strategy_type == 'qqe_strategy':
+                # QQE Trading Strategy (TradingView implementation)
+                qqe_period = int(request.form.get('qqe_period', 18))
+                stop_loss_pct = float(request.form.get('stop_loss_pct', 2.0)) / 100  # Convert percentage to decimal
+                
+                # Calculate highest high and lowest low for QQE period
+                backtest_data['high_period'] = backtest_data['high'].rolling(window=qqe_period).max()
+                backtest_data['low_period'] = backtest_data['low'].rolling(window=qqe_period).min()
+                
+                # Calculate QQE value based on the formula from TradingView code
+                backtest_data['qqe'] = (backtest_data['close'] - 0.5 * (backtest_data['high_period'] + backtest_data['low_period'])) / \
+                                      (0.5 * (backtest_data['high_period'] - backtest_data['low_period']))
+                
+                # Generate signals: 1 when QQE crosses above zero, -1 when QQE crosses below zero
+                backtest_data['signal'] = 0
+                
+                # Calculate crossovers and crossunders
+                long_signal = (backtest_data['qqe'] > 0) & (backtest_data['qqe'].shift(1) <= 0)
+                short_signal = (backtest_data['qqe'] < 0) & (backtest_data['qqe'].shift(1) >= 0)
+                
+                backtest_data.loc[long_signal, 'signal'] = 1
+                backtest_data.loc[short_signal, 'signal'] = -1
+                
+                # Store stop loss levels for trades
+                backtest_data['stop_loss_long'] = backtest_data['low_period'] - stop_loss_pct * backtest_data['close']
+                backtest_data['stop_loss_short'] = backtest_data['high_period'] + stop_loss_pct * backtest_data['close']
+                
+                strategy_name = f"QQE Strategy (Period: {qqe_period}, Stop Loss: {stop_loss_pct*100:.1f}%)"
+                
             else:
                 flash('Strategia non riconosciuta.', 'danger')
                 return redirect(url_for('backtest', dataset_id=dataset_id))
