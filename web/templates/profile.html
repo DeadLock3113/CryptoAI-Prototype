@@ -41,6 +41,210 @@ Gestisci il tuo profilo e visualizza la tua attività recente
             </div>
         </div>
         
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toggle visibilità delle API key
+            document.querySelectorAll('.toggle-visibility').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const target = this.getAttribute('data-target');
+                    const input = document.getElementById(target);
+                    const icon = this.querySelector('i');
+                    
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-eye-slash');
+                    } else {
+                        input.type = 'password';
+                        icon.classList.remove('fa-eye-slash');
+                        icon.classList.add('fa-eye');
+                    }
+                });
+            });
+            
+            // Pulsanti per il pannello dei profili API
+            const apiProfilesContainer = document.querySelector('.api-profiles-container');
+            const saveProfileBtn = document.getElementById('save-api-profile-btn');
+            const loadProfileBtn = document.getElementById('load-api-profile-btn');
+            const closeApiProfiles = document.getElementById('close-api-profiles');
+            const profileActions = document.getElementById('profile-actions');
+            
+            // Mostra/Nascondi pannello profili
+            saveProfileBtn.addEventListener('click', function() {
+                apiProfilesContainer.style.display = 'block';
+                profileActions.style.display = 'block';
+                loadApiProfiles('save');
+            });
+            
+            loadProfileBtn.addEventListener('click', function() {
+                apiProfilesContainer.style.display = 'block';
+                profileActions.style.display = 'none';
+                loadApiProfiles('load');
+            });
+            
+            closeApiProfiles.addEventListener('click', function() {
+                apiProfilesContainer.style.display = 'none';
+            });
+            
+            // Salva nuovo profilo
+            document.getElementById('save-new-profile').addEventListener('click', function() {
+                const profileName = document.getElementById('new-profile-name').value.trim();
+                if (!profileName) {
+                    alert('Inserisci un nome per il profilo.');
+                    return;
+                }
+                
+                // Raccoglie i valori di tutti i campi API
+                const apiData = {};
+                document.querySelectorAll('.api-field').forEach(function(field) {
+                    apiData[field.name] = field.value;
+                });
+                
+                // Invia i dati al server
+                fetch('/api/save-profile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: profileName,
+                        data: apiData
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Profilo salvato con successo!');
+                        document.getElementById('new-profile-name').value = '';
+                        loadApiProfiles('save');
+                    } else {
+                        alert('Errore: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Errore:', error);
+                    alert('Si è verificato un errore durante il salvataggio.');
+                });
+            });
+            
+            // Carica profili API salvati
+            function loadApiProfiles(mode) {
+                fetch('/api/get-profiles')
+                .then(response => response.json())
+                .then(data => {
+                    const profilesList = document.getElementById('api-profiles-list');
+                    const noProfilesMessage = document.getElementById('no-profiles-message');
+                    
+                    // Pulisci la lista attuale
+                    while (profilesList.firstChild) {
+                        if (profilesList.firstChild.id !== 'no-profiles-message') {
+                            profilesList.removeChild(profilesList.firstChild);
+                        }
+                    }
+                    
+                    if (data.profiles && data.profiles.length > 0) {
+                        noProfilesMessage.style.display = 'none';
+                        
+                        // Crea la lista dei profili
+                        const listGroup = document.createElement('div');
+                        listGroup.className = 'list-group';
+                        
+                        data.profiles.forEach(function(profile) {
+                            const item = document.createElement('div');
+                            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                            
+                            const nameSpan = document.createElement('span');
+                            nameSpan.textContent = profile.name;
+                            
+                            const actionsDiv = document.createElement('div');
+                            
+                            if (mode === 'load') {
+                                // Pulsante carica
+                                const loadBtn = document.createElement('button');
+                                loadBtn.className = 'btn btn-sm btn-primary';
+                                loadBtn.innerHTML = '<i class="fas fa-download"></i> Carica';
+                                loadBtn.addEventListener('click', function() {
+                                    loadApiProfile(profile.id);
+                                });
+                                actionsDiv.appendChild(loadBtn);
+                            } else {
+                                // Pulsante elimina
+                                const deleteBtn = document.createElement('button');
+                                deleteBtn.className = 'btn btn-sm btn-danger';
+                                deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+                                deleteBtn.addEventListener('click', function() {
+                                    deleteApiProfile(profile.id, profile.name);
+                                });
+                                actionsDiv.appendChild(deleteBtn);
+                            }
+                            
+                            item.appendChild(nameSpan);
+                            item.appendChild(actionsDiv);
+                            listGroup.appendChild(item);
+                        });
+                        
+                        profilesList.appendChild(listGroup);
+                    } else {
+                        noProfilesMessage.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Errore:', error);
+                    alert('Si è verificato un errore durante il caricamento dei profili.');
+                });
+            }
+            
+            // Carica un profilo specifico
+            function loadApiProfile(profileId) {
+                fetch(`/api/get-profile/${profileId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Popola i campi del form
+                        const profileData = data.profile.data;
+                        for (const key in profileData) {
+                            if (document.querySelector(`[name="${key}"]`)) {
+                                document.querySelector(`[name="${key}"]`).value = profileData[key];
+                            }
+                        }
+                        
+                        // Chiudi il pannello
+                        apiProfilesContainer.style.display = 'none';
+                        alert('Profilo caricato con successo!');
+                    } else {
+                        alert('Errore: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Errore:', error);
+                    alert('Si è verificato un errore durante il caricamento del profilo.');
+                });
+            }
+            
+            // Elimina un profilo
+            function deleteApiProfile(profileId, profileName) {
+                if (confirm(`Sei sicuro di voler eliminare il profilo "${profileName}"?`)) {
+                    fetch(`/api/delete-profile/${profileId}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            loadApiProfiles('save');
+                            alert('Profilo eliminato con successo!');
+                        } else {
+                            alert('Errore: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Errore:', error);
+                        alert('Si è verificato un errore durante l\'eliminazione del profilo.');
+                    });
+                }
+            }
+        });
+        </script>
+        
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-warning text-dark">
                 <h5 class="mb-0">Modifica Password</h5>
@@ -79,7 +283,42 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                 <form method="POST" action="{{ url_for('profile') }}">
                     <input type="hidden" name="form_type" value="api_settings">
                     
-                    <h6 class="card-title mb-3">API Exchange</h6>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="card-title mb-0">API Exchange</h6>
+                        <div class="api-profiles-controls">
+                            <button type="button" class="btn btn-outline-success btn-sm me-2" id="save-api-profile-btn">
+                                <i class="fas fa-save me-1"></i> Salva Profilo
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="load-api-profile-btn">
+                                <i class="fas fa-folder-open me-1"></i> Carica Profilo
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="api-profiles-container mb-3" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-dark text-white">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">Profili API Salvati</h6>
+                                    <button type="button" class="btn-close btn-close-white" id="close-api-profiles"></button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="api-profiles-list">
+                                    <!-- I profili salvati verranno caricati qui -->
+                                    <div class="text-center py-3" id="no-profiles-message">
+                                        <p class="text-muted mb-0">Nessun profilo API salvato.</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3" id="profile-actions" style="display: none;">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="new-profile-name" placeholder="Nome profilo...">
+                                        <button class="btn btn-success" type="button" id="save-new-profile">Salva</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
                     <div class="card mb-3">
                         <div class="card-header bg-light">
@@ -92,11 +331,21 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                             <div class="row">
                                 <div class="col-md-6 mb-2">
                                     <label for="binance_api_key" class="form-label">API Key</label>
-                                    <input type="password" class="form-control" id="binance_api_key" name="binance_api_key" value="{{ current_user.binance_api_key or '' }}">
+                                    <div class="input-group">
+                                        <input type="password" class="form-control api-field" id="binance_api_key" name="binance_api_key" value="{{ current_user.binance_api_key or '' }}">
+                                        <button class="btn btn-outline-secondary toggle-visibility" type="button" data-target="binance_api_key">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-md-6 mb-2">
                                     <label for="binance_api_secret" class="form-label">API Secret</label>
-                                    <input type="password" class="form-control" id="binance_api_secret" name="binance_api_secret" value="{{ current_user.binance_api_secret or '' }}">
+                                    <div class="input-group">
+                                        <input type="password" class="form-control api-field" id="binance_api_secret" name="binance_api_secret" value="{{ current_user.binance_api_secret or '' }}">
+                                        <button class="btn btn-outline-secondary toggle-visibility" type="button" data-target="binance_api_secret">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -113,11 +362,21 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                             <div class="row">
                                 <div class="col-md-6 mb-2">
                                     <label for="kraken_api_key" class="form-label">API Key</label>
-                                    <input type="password" class="form-control" id="kraken_api_key" name="kraken_api_key" value="{{ current_user.kraken_api_key or '' }}">
+                                    <div class="input-group">
+                                        <input type="password" class="form-control api-field" id="kraken_api_key" name="kraken_api_key" value="{{ current_user.kraken_api_key or '' }}">
+                                        <button class="btn btn-outline-secondary toggle-visibility" type="button" data-target="kraken_api_key">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-md-6 mb-2">
                                     <label for="kraken_api_secret" class="form-label">API Secret</label>
-                                    <input type="password" class="form-control" id="kraken_api_secret" name="kraken_api_secret" value="{{ current_user.kraken_api_secret or '' }}">
+                                    <div class="input-group">
+                                        <input type="password" class="form-control api-field" id="kraken_api_secret" name="kraken_api_secret" value="{{ current_user.kraken_api_secret or '' }}">
+                                        <button class="btn btn-outline-secondary toggle-visibility" type="button" data-target="kraken_api_secret">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
