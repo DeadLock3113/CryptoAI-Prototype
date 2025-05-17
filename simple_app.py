@@ -208,15 +208,14 @@ with app.app_context():
 def get_current_user():
     """Get current user from session"""
     if 'user_id' in session:
-        # Usiamo la cache per gli utenti
-        user_cache_key = f"user_{session['user_id']}"
-        if user_cache_key in _memory_cache:
-            return _memory_cache[user_cache_key]
-            
-        user = User.query.get(session['user_id'])
-        if user:
-            _memory_cache[user_cache_key] = user
-            return user
+        # Ottieni un fresh object dal database per evitare problemi di "detached instance"
+        try:
+            # Disabilita la cache per evitare problemi di sessione scaduta
+            user = User.query.filter_by(id=session['user_id']).first()
+            if user:
+                return user
+        except Exception as e:
+            logger.error(f"Errore nel recupero dell'utente: {str(e)}")
     return None
 
 def load_dataset(dataset_id):
