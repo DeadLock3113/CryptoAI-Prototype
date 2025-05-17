@@ -1188,19 +1188,62 @@ def models():
     if dataset_id:
         selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
     
-    # Check for GPU availability but handle gracefully if TF not installed
+    # Check for GPU availability but handle gracefully
     gpu_available = False
+    pytorch_available = False
+    
     try:
-        # Try to import tensorflow but don't fail the whole app if it's not available
-        import tensorflow as tf
-        gpu_available = len(tf.config.list_physical_devices('GPU')) > 0
-        if gpu_available:
-            logger.debug(f"GPU detected and available for ML calculations")
-        else:
-            logger.debug("No GPU available, will use CPU for calculations")
+        # Try to import PyTorch - better for AMD GPUs with ROCm
+        try:
+            import torch
+            pytorch_available = True
+            gpu_available = torch.cuda.is_available() or hasattr(torch, 'hip') and torch.hip.is_available()
+            
+            if gpu_available:
+                if torch.cuda.is_available():
+                    gpu_type = f"NVIDIA GPU: {torch.cuda.get_device_name(0)}"
+                    logger.debug(f"CUDA GPU detected via PyTorch: {gpu_type}")
+                elif hasattr(torch, 'hip') and torch.hip.is_available():
+                    gpu_type = "AMD GPU via ROCm"
+                    logger.debug(f"ROCm GPU detected via PyTorch: {gpu_type}")
+                else:
+                    gpu_type = "GPU sconosciuta"
+                    logger.debug("GPU rilevata ma tipo sconosciuto")
+            else:
+                logger.debug("PyTorch installato ma nessuna GPU rilevata")
+        except Exception as e:
+            logger.debug(f"PyTorch import error: {str(e)}")
+            
+        # Fallback to subprocess check if PyTorch not available
+        if not pytorch_available:
+            try:
+                # Check for NVIDIA GPU
+                result = subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+                if result.returncode == 0:
+                    gpu_available = True
+                    gpu_type = "NVIDIA GPU"
+                    logger.debug(f"CUDA detected via nvidia-smi")
+            except:
+                pass
+                
+            try:
+                # Check for AMD GPU with rocm-smi
+                result = subprocess.run(['rocm-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+                if result.returncode == 0:
+                    gpu_available = True
+                    gpu_type = "AMD GPU"
+                    logger.debug(f"ROCm detected via rocm-smi")
+            except:
+                logger.debug("No GPU management tools found")
+            
     except Exception as e:
-        logger.debug(f"TensorFlow not available: {str(e)}")
-        # Continue without TensorFlow - the rest of the app can still work
+        logger.debug(f"Error during GPU detection: {str(e)}")
+        
+    # Display appropriate message in UI
+    if gpu_available:
+        gpu_message = f"GPU rilevata ({gpu_type}) e disponibile per calcoli ML"
+    else:
+        gpu_message = "GPU non disponibile, verrà utilizzata la CPU"
     
     # Handle POST request to train model
     if request.method == 'POST' and selected_dataset:
@@ -1251,81 +1294,179 @@ def models():
             from sklearn.model_selection import train_test_split
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
             
-            # Define model builder function first
+            # Define model builder function using PyTorch
             def build_model(model_type, lookback):
-                import tensorflow as tf
-                from tensorflow.keras.models import Sequential
-                from tensorflow.keras.layers import Dense, LSTM, Dropout, SimpleRNN, GRU
-                from tensorflow.keras.optimizers import Adam
+                import torch
+                import torch.nn as nn
                 
-                model = Sequential()
                 model_name = ""
                 
-                if model_type == 'lstm':
-                    model.add(LSTM(units=50, return_sequences=True, input_shape=(lookback, 1)))
-                    model.add(Dropout(0.2))
-                    model.add(LSTM(units=50, return_sequences=False))
-                    model.add(Dropout(0.2))
-                    model.add(Dense(units=1))
-                    model_name = "LSTM"
-                    
-                elif model_type == 'rnn':
-                    model.add(SimpleRNN(units=50, return_sequences=True, input_shape=(lookback, 1)))
-                    model.add(Dropout(0.2))
-                    model.add(SimpleRNN(units=50, return_sequences=False))
-                    model.add(Dropout(0.2))
-                    model.add(Dense(units=1))
-                    model_name = "RNN semplice"
-                    
-                elif model_type == 'gru':
-                    model.add(GRU(units=50, return_sequences=True, input_shape=(lookback, 1)))
-                    model.add(Dropout(0.2))
-                    model.add(GRU(units=50, return_sequences=False))
-                    model.add(Dropout(0.2))
-                    model.add(Dense(units=1))
-                    model_name = "GRU"
+                class LSTMModel(nn.Module):
+                    def __init__(self, input_size=1, hidden_size=50, num_layers=2, output_size=1, dropout=0.2):
+                        super(LSTMModel, self).__init__()
+                        self.hidden_size = hidden_size
+                        self.num_layers = num_layers
+                        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+                        self.fc = nn.Linear(hidden_size, output_size)
+                        
+                    def forward(self, x):
+                        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                        out, _ = self.lstm(x, (h0, c0))
+                        out = self.fc(out[:, -1, :])
+                        return out
                 
+                class RNNModel(nn.Module):
+                    def __init__(self, input_size=1, hidden_size=50, num_layers=2, output_size=1, dropout=0.2):
+                        super(RNNModel, self).__init__()
+                        self.hidden_size = hidden_size
+                        self.num_layers = num_layers
+                        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+                        self.fc = nn.Linear(hidden_size, output_size)
+                        
+                    def forward(self, x):
+                        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                        out, _ = self.rnn(x, h0)
+                        out = self.fc(out[:, -1, :])
+                        return out
+                
+                class GRUModel(nn.Module):
+                    def __init__(self, input_size=1, hidden_size=50, num_layers=2, output_size=1, dropout=0.2):
+                        super(GRUModel, self).__init__()
+                        self.hidden_size = hidden_size
+                        self.num_layers = num_layers
+                        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+                        self.fc = nn.Linear(hidden_size, output_size)
+                        
+                    def forward(self, x):
+                        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                        out, _ = self.gru(x, h0)
+                        out = self.fc(out[:, -1, :])
+                        return out
+                
+                if model_type == 'lstm':
+                    model = LSTMModel()
+                    model_name = "LSTM"
+                elif model_type == 'rnn':
+                    model = RNNModel()
+                    model_name = "RNN semplice"
+                elif model_type == 'gru':
+                    model = GRUModel()
+                    model_name = "GRU"
                 else:
                     return None, None
                 
-                model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
                 return model, model_name
             
-            # Initialize model
-            import tensorflow as tf
-            from tensorflow.keras.callbacks import EarlyStopping
+            # Initialize model with PyTorch
+            import torch
+            import torch.nn as nn
+            import torch.optim as optim
+            from torch.utils.data import TensorDataset, DataLoader
             
-            # Set device placement (CPU/GPU)
-            if gpu_available:
-                with tf.device('/GPU:0'):
-                    logger.debug("Building model on GPU")
-                    model, model_name = build_model(model_type, lookback)
-            else:
-                with tf.device('/CPU:0'):
-                    logger.debug("Building model on CPU")
-                    model, model_name = build_model(model_type, lookback)
+            # Convert data to PyTorch tensors
+            X_train_tensor = torch.FloatTensor(X_train)
+            y_train_tensor = torch.FloatTensor(y_train)
+            X_test_tensor = torch.FloatTensor(X_test)
+            y_test_tensor = torch.FloatTensor(y_test)
+            
+            # Create datasets and dataloaders
+            train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+            test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            test_loader = DataLoader(test_dataset, batch_size=batch_size)
+            
+            # Set device (CPU/GPU)
+            device = torch.device("cuda:0" if pytorch_available and torch.cuda.is_available() else 
+                                "mps" if pytorch_available and hasattr(torch, 'mps') and torch.mps.is_available() else
+                                "cpu")
+            
+            logger.debug(f"Using device: {device}")
+            
+            # Build model
+            model, model_name = build_model(model_type, lookback)
             
             if model is None:
                 flash('Tipo di modello non riconosciuto.', 'danger')
                 return redirect(url_for('models', dataset_id=dataset_id))
             
-            # Train model with early stopping
-            early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+            # Move model to device    
+            model = model.to(device)
+            
+            # Define loss function and optimizer
+            criterion = nn.MSELoss()
+            optimizer = optim.Adam(model.parameters(), lr=0.001)
+            
+            # Training history to store loss values
+            history = {'loss': [], 'val_loss': []}
+            best_val_loss = float('inf')
+            patience_counter = 0
+            patience = 10  # Early stopping patience
+            best_model_state = None
             
             # Training message
-            logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples")
+            logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples on {device}")
             
-            history = model.fit(
-                X_train, y_train,
-                epochs=epochs,
-                batch_size=batch_size,
-                validation_data=(X_test, y_test),
-                callbacks=[early_stopping],
-                verbose=1
-            )
+            # Training loop
+            for epoch in range(epochs):
+                # Training
+                model.train()
+                train_loss = 0
+                for inputs, targets in train_loader:
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    
+                    # Forward pass
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    
+                    # Backward and optimize
+                    loss.backward()
+                    optimizer.step()
+                    
+                    train_loss += loss.item()
+                
+                # Validation
+                model.eval()
+                val_loss = 0
+                with torch.no_grad():
+                    for inputs, targets in test_loader:
+                        inputs, targets = inputs.to(device), targets.to(device)
+                        outputs = model(inputs)
+                        loss = criterion(outputs, targets)
+                        val_loss += loss.item()
+                
+                # Calculate average losses
+                train_loss /= len(train_loader)
+                val_loss /= len(test_loader)
+                
+                # Store history
+                history['loss'].append(train_loss)
+                history['val_loss'].append(val_loss)
+                
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    best_model_state = model.state_dict().copy()
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        logger.debug(f"Early stopping at epoch {epoch+1}")
+                        break
+                
+                # Print progress
+                if (epoch + 1) % 10 == 0:
+                    logger.debug(f'Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+            
+            # Load best model
+            if best_model_state:
+                model.load_state_dict(best_model_state)
             
             # Make predictions
-            y_pred = model.predict(X_test)
+            model.eval()
+            with torch.no_grad():
+                y_pred = model(X_test_tensor.to(device)).cpu().numpy()
             
             # Inverse transform the predictions and actual values
             y_test_actual = scaler.inverse_transform(y_test)
