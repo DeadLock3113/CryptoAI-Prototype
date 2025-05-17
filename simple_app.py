@@ -339,13 +339,32 @@ def index():
             db.session.commit()
         
         # Tenta di ottenere il saldo dell'account dagli exchange configurati
-        if user.binance_api_key or user.kraken_api_key:
-            try:
-                # Ottieni il saldo degli account
+        try:
+            if user.binance_api_key or user.kraken_api_key:
+                # Ottieni il saldo degli account dalle API
                 account_balance = get_account_balances(user)
-            except ExchangeAPIError as e:
-                flash(f'Errore nel recuperare il saldo dell\'account: {str(e)}', 'danger')
-                logger.error(f"Errore API exchange per l'utente {user.id}: {str(e)}")
+                logger.info(f"Saldo ottenuto dalle API degli exchange per l'utente {user.id}")
+            else:
+                # Se l'utente non ha configurato le API, mostra un esempio di saldo
+                from utils.exchange_api import get_eur_usd_exchange_rate
+                eur_usd_rate = get_eur_usd_exchange_rate()
+                
+                account_balance = {
+                    'exchanges': [],
+                    'currencies': {'BTC': 0.5, 'ETH': 2.5, 'USDT': 1000.0},
+                    'currency_values': {'BTC': 20000.0, 'ETH': 2500.0, 'USDT': 1000.0},
+                    'total_balance_usdt': 30000.0,
+                    'total_balance_eur': 30000.0 * eur_usd_rate,
+                    'eur_usd_rate': eur_usd_rate
+                }
+                flash('Stai visualizzando un saldo di esempio. Configura le API degli exchange nel tuo profilo per vedere il saldo reale.', 'info')
+                logger.info(f"Esempio di saldo mostrato per l'utente {user.id} senza API configurate")
+                
+            # Log per debug
+            logger.debug(f"Account balance: {account_balance}")
+        except ExchangeAPIError as e:
+            flash(f'Errore nel recuperare il saldo dell\'account: {str(e)}', 'danger')
+            logger.error(f"Errore API exchange per l'utente {user.id}: {str(e)}")
     
     return render_template(
         'index.html', 

@@ -213,6 +213,7 @@ def get_account_balances(user):
     results = {
         'exchanges': [],
         'currencies': {},
+        'currency_values': {},  # Valori in USDT per ogni valuta
         'total_balance_usdt': 0.0,
         'total_balance_eur': 0.0,
         'eur_usd_rate': 0.0
@@ -241,6 +242,7 @@ def get_account_balances(user):
                 # Aggiungi alla lista valute aggregate
                 if currency not in results['currencies']:
                     results['currencies'][currency] = 0.0
+                    results['currency_values'][currency] = 0.0
                 
                 results['currencies'][currency] += amount
                 
@@ -250,10 +252,12 @@ def get_account_balances(user):
                     balance['usdt_value'] = usdt_value
                     balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
+                    results['currency_values'][currency] += usdt_value
                 elif currency == 'USDT':
                     balance['usdt_value'] = amount
                     balance['eur_value'] = amount * eur_usd_rate
                     results['total_balance_usdt'] += amount
+                    results['currency_values'][currency] += amount
             
             results['exchanges'].append(binance_balance)
         except ExchangeAPIError as e:
@@ -275,6 +279,7 @@ def get_account_balances(user):
                 # Aggiungi alla lista valute aggregate
                 if currency not in results['currencies']:
                     results['currencies'][currency] = 0.0
+                    results['currency_values'][currency] = 0.0
                 
                 results['currencies'][currency] += amount
                 
@@ -284,10 +289,12 @@ def get_account_balances(user):
                     balance['usdt_value'] = usdt_value
                     balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
+                    results['currency_values'][currency] += usdt_value
                 elif currency == 'USDT':
                     balance['usdt_value'] = amount
                     balance['eur_value'] = amount * eur_usd_rate
                     results['total_balance_usdt'] += amount
+                    results['currency_values'][currency] += amount
             
             results['exchanges'].append(kraken_balance)
         except ExchangeAPIError as e:
@@ -295,6 +302,9 @@ def get_account_balances(user):
     
     # Calcola il saldo totale in EUR
     results['total_balance_eur'] = results['total_balance_usdt'] * eur_usd_rate
+    
+    # Aggiungiamo un log per debug
+    logger.debug(f"Account balance: {results}")
     
     return results
 
