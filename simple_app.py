@@ -1188,21 +1188,19 @@ def models():
     if dataset_id:
         selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
     
-    # Check for GPU availability
+    # Check for GPU availability but handle gracefully if TF not installed
+    gpu_available = False
     try:
+        # Try to import tensorflow but don't fail the whole app if it's not available
         import tensorflow as tf
         gpu_available = len(tf.config.list_physical_devices('GPU')) > 0
         if gpu_available:
-            # Enable memory growth to avoid allocating all GPU memory
-            for gpu in tf.config.list_physical_devices('GPU'):
-                tf.config.experimental.set_memory_growth(gpu, True)
-            gpu_info = tf.config.list_physical_devices('GPU')[0].device_type
-            logger.debug(f"GPU detected: {gpu_info}")
+            logger.debug(f"GPU detected and available for ML calculations")
         else:
-            logger.debug("No GPU available, using CPU")
+            logger.debug("No GPU available, will use CPU for calculations")
     except Exception as e:
-        gpu_available = False
-        logger.debug(f"Error checking GPU availability: {str(e)}")
+        logger.debug(f"TensorFlow not available: {str(e)}")
+        # Continue without TensorFlow - the rest of the app can still work
     
     # Handle POST request to train model
     if request.method == 'POST' and selected_dataset:
