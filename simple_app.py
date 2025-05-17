@@ -345,20 +345,10 @@ def index():
                 account_balance = get_account_balances(user)
                 logger.info(f"Saldo ottenuto dalle API degli exchange per l'utente {user.id}")
             else:
-                # Se l'utente non ha configurato le API, mostra un esempio di saldo
-                from utils.exchange_api import get_eur_usd_exchange_rate
-                eur_usd_rate = get_eur_usd_exchange_rate()
-                
-                account_balance = {
-                    'exchanges': [],
-                    'currencies': {'BTC': 0.5, 'ETH': 2.5, 'USDT': 1000.0},
-                    'currency_values': {'BTC': 20000.0, 'ETH': 2500.0, 'USDT': 1000.0},
-                    'total_balance_usdt': 30000.0,
-                    'total_balance_eur': 30000.0 * eur_usd_rate,
-                    'eur_usd_rate': eur_usd_rate
-                }
-                flash('Stai visualizzando un saldo di esempio. Configura le API degli exchange nel tuo profilo per vedere il saldo reale.', 'info')
-                logger.info(f"Esempio di saldo mostrato per l'utente {user.id} senza API configurate")
+                # Se l'utente non ha configurato le API, mostra un messaggio
+                account_balance = None
+                flash('Per visualizzare il tuo saldo reale, configura le API degli exchange nel tuo profilo.', 'warning')
+                logger.info(f"Utente {user.id} non ha configurato le API degli exchange")
                 
             # Log per debug
             logger.debug(f"Account balance: {account_balance}")
