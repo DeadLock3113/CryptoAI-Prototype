@@ -18,6 +18,19 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from functools import wraps
+
+# Patch per risolvere il problema con optimize=True in savefig
+original_savefig = plt.savefig
+
+@wraps(original_savefig)
+def safe_savefig(*args, **kwargs):
+    # Rimuoviamo il parametro optimize che causa problemi
+    if 'optimize' in kwargs:
+        del kwargs['optimize']
+    return original_savefig(*args, **kwargs)
+
+plt.savefig = safe_savefig
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -200,8 +213,8 @@ def generate_price_chart(data, symbol, resolution='full'):
         
         # Save plot to buffer with optimized settings
         buffer = io.BytesIO()
-        plt.savefig(buffer, format='png', dpi=dpi, bbox_inches='tight', 
-                   transparent=False)
+        # Parametri ridotti per evitare errori con optimize
+        plt.savefig(buffer, format='png', dpi=dpi)
         buffer.seek(0)
         
         # Convert plot to base64
@@ -900,8 +913,8 @@ def indicators():
                     else:
                         dpi = 100  # DPI standard per dataset normali
                     
-                    plt.savefig(buffer, format='png', dpi=dpi, 
-                               bbox_inches='tight', pad_inches=0.1)
+                    # Parametri ridotti per evitare errori
+                    plt.savefig(buffer, format='png', dpi=dpi)
                     buffer.seek(0)
                     
                     # Convert plot to base64 for embedding in HTML
