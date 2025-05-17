@@ -11,10 +11,18 @@ Version: 1.0
 import os
 import logging
 from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Initialize database
+class Base(DeclarativeBase):
+    pass
+
+db = SQLAlchemy(model_class=Base)
 
 def create_app():
     """
@@ -38,11 +46,26 @@ def create_app():
         PLOTS_FOLDER=os.path.join(os.getcwd(), 'web', 'static', 'plots'),
         TEMPLATES_AUTO_RELOAD=True,
         DEBUG=True,
+        # Database configuration
+        SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/crypto_analyzer"),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "pool_recycle": 300,
+            "pool_pre_ping": True,
+        },
     )
     
     # Ensure upload and plots folders exist
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['PLOTS_FOLDER'], exist_ok=True)
+    
+    # Initialize the database with the app
+    db.init_app(app)
+    
+    # Create all database tables
+    with app.app_context():
+        import models  # Import models to register them with SQLAlchemy
+        db.create_all()
     
     # Define routes
     @app.route('/')

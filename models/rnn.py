@@ -1,93 +1,115 @@
 """
 RNN Model Module for CryptoTradeAnalyzer
 
-This module implements a Recurrent Neural Network (RNN) with GRU cells for time series
-forecasting of cryptocurrency prices. GRU (Gated Recurrent Unit) cells are used as a
-more efficient alternative to LSTM cells while still capturing temporal dependencies.
+This module implements a Recurrent Neural Network (RNN) model with GRU cells
+for cryptocurrency price prediction.
 
 Author: CryptoTradeAnalyzer Team
 """
 
+import os
 import numpy as np
 import pandas as pd
-import os
 import logging
-import time
-import matplotlib.pyplot as plt
 from datetime import datetime
-
-# TensorFlow imports
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import GRU, Dense, Dropout, BatchNormalization
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
-from tensorflow.keras.optimizers import Adam
-
-# Preprocessing imports
-from models.preprocessing import TimeSeriesPreprocessor
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import GRU, Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 logger = logging.getLogger(__name__)
 
 class RNNModel:
     """
-    RNN Model for time series forecasting
+    RNN Model for time series prediction
     
-    This class implements a Recurrent Neural Network (RNN) with GRU cells for
-    forecasting cryptocurrency prices based on historical data and technical indicators.
+    This class implements a Recurrent Neural Network (RNN) with GRU cells
+    for cryptocurrency price prediction.
     """
     
-    def __init__(self, sequence_length=60, units=100, dropout_rate=0.2, 
-                 learning_rate=0.001, batch_size=32, epochs=50, bidirectional=True):
+    def __init__(self):
         """
-        Initialize the RNN model
+        Initialize the RNN Model
+        """
+        self.model = None
+        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        self.sequence_length = 60  # Default sequence length
+        self.features = []
+        self.target_column = 'close'
+        self.model_path = 'models/saved/rnn_model'
+        self.metrics = {}
+        
+        # Create directory for saved models if it doesn't exist
+        os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
+        
+    def _prepare_data(self, data, sequence_length=None, target_column=None, test_size=0.2):
+        """
+        Prepare data for RNN model training
         
         Parameters:
         -----------
-        sequence_length : int
-            Length of input sequences (lookback window)
-        units : int
-            Number of GRU units in the first layer
-        dropout_rate : float
-            Dropout rate for regularization
-        learning_rate : float
-            Learning rate for optimizer
-        batch_size : int
-            Batch size for training
-        epochs : int
-            Maximum number of epochs for training
-        bidirectional : bool
-            Whether to use bidirectional GRU layers
+        data : pandas.DataFrame
+            DataFrame with price and indicator data
+        sequence_length : int, optional
+            Number of timesteps to use for each input sequence
+        target_column : str, optional
+            Target column to predict
+        test_size : float
+            Proportion of data to use for testing
+            
+        Returns:
+        --------
+        tuple
+            (X_train, y_train, X_test, y_test, scaler)
         """
-        self.sequence_length = sequence_length
-        self.units = units
-        self.dropout_rate = dropout_rate
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.bidirectional = bidirectional
+        if sequence_length is not None:
+            self.sequence_length = sequence_length
         
-        # Initialize preprocessor
-        self.preprocessor = TimeSeriesPreprocessor()
+        if target_column is not None:
+            self.target_column = target_column
         
-        # Initialize model
-        self.model = None
+        # Identify feature columns (exclude date/time columns)
+        self.features = [col for col in data.columns if col != 'timestamp' 
+                         and not pd.api.types.is_datetime64_any_dtype(data[col])]
         
-        # Training history
-        self.history = None
+        logger.info(f"Using features: {self.features}")
         
-        # Store model evaluation metrics
-        self.evaluation_metrics = {}
+        # Extract feature data
+        data_for_training = data[self.features].values
         
-        logger.info(f"Initialized RNN model with sequence_length={sequence_length}, units={units}, bidirectional={bidirectional}")
+        # Scale the data
+        scaled_data = self.scaler.fit_transform(data_for_training)
+        
+        # Create sequences
+        X, y = [], []
+        for i in range(self.sequence_length, len(scaled_data)):
+            X.append(scaled_data[i-self.sequence_length:i])
+            # Find the index of the target column
+            target_idx = self.features.index(self.target_column)
+            y.append(scaled_data[i, target_idx])
+            
+        X, y = np.array(X), np.array(y)
+        
+        # Split into train and test sets
+        split_idx = int(len(X) * (1 - test_size))
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+        
+        logger.info(f"Training data shape: {X_train.shape}, Test data shape: {X_test.shape}")
+        
+        return X_train, y_train, X_test, y_test
     
     def build_model(self, input_shape):
         """
-        Build the RNN model architecture
+        Build the RNN model architecture with GRU cells
         
         Parameters:
         -----------
         input_shape : tuple
-            Shape of input data (sequence_length, n_features)
+            Shape of input data (sequence_length, features)
             
         Returns:
         --------
@@ -97,454 +119,253 @@ class RNNModel:
         model = Sequential()
         
         # First GRU layer with return sequences for stacking
-        if self.bidirectional:
-            from tensorflow.keras.layers import Bidirectional
-            model.add(Bidirectional(GRU(units=self.units, 
-                                       return_sequences=True), 
-                                  input_shape=input_shape))
-        else:
-            model.add(GRU(units=self.units, 
-                         return_sequences=True, 
-                         input_shape=input_shape))
-        
-        model.add(BatchNormalization())
-        model.add(Dropout(self.dropout_rate))
+        model.add(GRU(units=64, return_sequences=True, input_shape=input_shape, 
+                     activation='tanh', recurrent_activation='sigmoid'))
+        model.add(Dropout(0.2))
         
         # Second GRU layer
-        if self.bidirectional:
-            model.add(Bidirectional(GRU(units=self.units // 2, 
-                                       return_sequences=False)))
-        else:
-            model.add(GRU(units=self.units // 2, 
-                         return_sequences=False))
+        model.add(GRU(units=32, return_sequences=False, 
+                     activation='tanh', recurrent_activation='sigmoid'))
+        model.add(Dropout(0.2))
         
-        model.add(BatchNormalization())
-        model.add(Dropout(self.dropout_rate))
+        # Output layer
+        model.add(Dense(units=1))
         
-        # Dense output layer
-        model.add(Dense(1))
+        # Compile the model
+        model.compile(optimizer='adam', loss='mean_squared_error')
         
-        # Compile model
-        optimizer = Adam(learning_rate=self.learning_rate)
-        model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+        logger.info(f"RNN-GRU Model built with input shape: {input_shape}")
         
-        # Store model
-        self.model = model
-        
-        logger.info(f"Built RNN model with input shape {input_shape}")
         return model
     
-    def prepare_data(self, df, target_column='close'):
-        """
-        Prepare data for RNN model
-        
-        Parameters:
-        -----------
-        df : pandas.DataFrame
-            DataFrame with OHLCV data and indicators
-        target_column : str
-            Name of target column to predict
-            
-        Returns:
-        --------
-        tuple
-            Tuple of (X_train, y_train, X_val, y_val, X_test, y_test)
-        """
-        logger.info("Preparing data for RNN model")
-        
-        # Make a copy of the dataframe
-        data = df.copy()
-        
-        # Add technical indicators
-        data = self.preprocessor.add_technical_indicators(data)
-        
-        # Add lag features for close price
-        data = self.preprocessor.add_lag_features(data, [target_column])
-        
-        # Add rolling features for close price
-        data = self.preprocessor.add_rolling_features(data, [target_column])
-        
-        # Add return features
-        data = self.preprocessor.add_return_features(data, [target_column])
-        
-        # Add time features if possible
-        if isinstance(data.index, pd.DatetimeIndex):
-            data = self.preprocessor.add_time_features(data)
-        
-        # Drop rows with NaN values
-        data.dropna(inplace=True)
-        
-        # Define feature columns (all except target)
-        feature_columns = [col for col in data.columns if col != target_column]
-        
-        # Scale features and target
-        data = self.preprocessor.scale_features(data, feature_columns)
-        data = self.preprocessor.scale_target(data, target_column)
-        
-        # Split data into train, validation, and test sets
-        train_data, val_data, test_data = self.preprocessor.train_val_test_split(data)
-        
-        # Create sequences
-        X_train, y_train = self.preprocessor.create_sequences(
-            train_data, feature_columns, target_column, self.sequence_length)
-        
-        X_val, y_val = self.preprocessor.create_sequences(
-            val_data, feature_columns, target_column, self.sequence_length)
-        
-        X_test, y_test = self.preprocessor.create_sequences(
-            test_data, feature_columns, target_column, self.sequence_length)
-        
-        logger.info(f"Prepared data: X_train shape={X_train.shape}, y_train shape={y_train.shape}")
-        logger.info(f"Validation data: X_val shape={X_val.shape}, y_val shape={y_val.shape}")
-        logger.info(f"Test data: X_test shape={X_test.shape}, y_test shape={y_test.shape}")
-        
-        return X_train, y_train, X_val, y_val, X_test, y_test
-    
-    def train(self, df, target_column='close', epochs=None):
+    def train(self, data, sequence_length=None, target_column=None, epochs=50, batch_size=32):
         """
         Train the RNN model
         
         Parameters:
         -----------
-        df : pandas.DataFrame
-            DataFrame with OHLCV data and indicators
-        target_column : str
-            Name of target column to predict
+        data : pandas.DataFrame
+            DataFrame with price and indicator data
+        sequence_length : int, optional
+            Number of timesteps to use for each input sequence
+        target_column : str, optional
+            Target column to predict
         epochs : int
-            Number of training epochs (overrides the one set in __init__)
-            
-        Returns:
-        --------
-        tensorflow.keras.callbacks.History
-            Training history
-        """
-        logger.info("Training RNN model")
-        
-        # Use provided epochs if given, otherwise use the one set in __init__
-        if epochs is not None:
-            self.epochs = epochs
-        
-        # Prepare data
-        X_train, y_train, X_val, y_val, X_test, y_test = self.prepare_data(df, target_column)
-        
-        # Build model if not already built
-        if self.model is None:
-            self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-        
-        # Create model directory if it doesn't exist
-        model_dir = 'models/saved'
-        os.makedirs(model_dir, exist_ok=True)
-        
-        # Define callbacks
-        callbacks = [
-            # Early stopping to prevent overfitting
-            EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-            
-            # Model checkpoint to save best model
-            ModelCheckpoint(
-                filepath=os.path.join(model_dir, 'rnn_model'),
-                monitor='val_loss',
-                save_best_only=True
-            ),
-            
-            # Reduce learning rate when plateau is reached
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-5),
-            
-            # TensorBoard logging
-            TensorBoard(log_dir=os.path.join('logs', f'rnn_{datetime.now().strftime("%Y%m%d-%H%M%S")}'))
-        ]
-        
-        # Train model
-        start_time = time.time()
-        
-        history = self.model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=self.epochs,
-            batch_size=self.batch_size,
-            callbacks=callbacks,
-            verbose=1
-        )
-        
-        train_time = time.time() - start_time
-        logger.info(f"Model training completed in {train_time:.2f} seconds")
-        
-        # Store training history
-        self.history = history.history
-        
-        # Evaluate model
-        self.evaluate(X_test, y_test)
-        
-        return history
-    
-    def evaluate(self, X_test, y_test):
-        """
-        Evaluate the RNN model on test data
-        
-        Parameters:
-        -----------
-        X_test : numpy.ndarray
-            Test features
-        y_test : numpy.ndarray
-            Test target
+            Number of training epochs
+        batch_size : int
+            Batch size for training
             
         Returns:
         --------
         dict
-            Evaluation metrics
+            Training history
         """
-        if self.model is None:
-            logger.error("Model not trained yet. Call train() first.")
-            return None
+        # Prepare data
+        X_train, y_train, X_test, y_test = self._prepare_data(
+            data, sequence_length, target_column
+        )
         
-        # Evaluate model
-        logger.info("Evaluating RNN model on test data")
-        evaluation = self.model.evaluate(X_test, y_test, verbose=1)
+        # Build model
+        self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
         
-        # Store metrics
-        metrics = {
-            'mse': evaluation[0],
-            'mae': evaluation[1],
-            'rmse': np.sqrt(evaluation[0])
+        # Setup callbacks
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+            ModelCheckpoint(filepath=self.model_path, save_best_only=True)
+        ]
+        
+        # Train the model
+        history = self.model.fit(
+            X_train, y_train,
+            epochs=epochs,
+            batch_size=batch_size,
+            validation_data=(X_test, y_test),
+            callbacks=callbacks,
+            verbose=1
+        )
+        
+        # Evaluate the model
+        self._evaluate_model(X_test, y_test, data)
+        
+        # Save training history
+        self.metrics['history'] = {
+            'loss': history.history['loss'],
+            'val_loss': history.history['val_loss']
         }
         
-        # Make predictions
-        y_pred = self.model.predict(X_test)
+        # Save model parameters
+        self.metrics['parameters'] = {
+            'sequence_length': self.sequence_length,
+            'target_column': self.target_column,
+            'features': self.features,
+            'epochs': epochs,
+            'batch_size': batch_size
+        }
         
-        # Inverse scale predictions and actual values
-        if hasattr(self.preprocessor, 'scalers') and 'target' in self.preprocessor.scalers:
-            y_test_original = self.preprocessor.inverse_scale_target(y_test.reshape(-1, 1)).flatten()
-            y_pred_original = self.preprocessor.inverse_scale_target(y_pred).flatten()
-            
-            # Calculate additional metrics on original scale
-            metrics['mse_original'] = np.mean((y_test_original - y_pred_original) ** 2)
-            metrics['mae_original'] = np.mean(np.abs(y_test_original - y_pred_original))
-            metrics['rmse_original'] = np.sqrt(metrics['mse_original'])
-            
-            # Calculate directional accuracy (% of correct direction predictions)
-            y_test_direction = np.sign(np.diff(y_test_original))
-            y_pred_direction = np.sign(np.diff(y_pred_original))
-            directional_accuracy = np.mean(y_test_direction == y_pred_direction)
-            metrics['directional_accuracy'] = directional_accuracy
+        logger.info(f"RNN-GRU Model trained for {len(history.history['loss'])} epochs")
         
-        # Store evaluation metrics
-        self.evaluation_metrics = metrics
-        
-        # Log metrics
-        logger.info(f"RNN model evaluation: MSE={metrics['mse']:.4f}, MAE={metrics['mae']:.4f}, RMSE={metrics['rmse']:.4f}")
-        if 'directional_accuracy' in metrics:
-            logger.info(f"Directional accuracy: {metrics['directional_accuracy']:.4f}")
-        
-        return metrics
+        return history.history
     
-    def predict(self, df, target_column='close'):
+    def _evaluate_model(self, X_test, y_test, original_data):
         """
-        Make predictions with the RNN model
+        Evaluate model performance
         
         Parameters:
         -----------
-        df : pandas.DataFrame
-            DataFrame with OHLCV data and indicators
-        target_column : str
-            Name of target column to predict
+        X_test : numpy.ndarray
+            Test input data
+        y_test : numpy.ndarray
+            Test target data
+        original_data : pandas.DataFrame
+            Original dataframe with unscaled data
+            
+        Returns:
+        --------
+        dict
+            Performance metrics
+        """
+        # Get predictions
+        predictions = self.model.predict(X_test)
+        
+        # Create a dummy array to inverse transform the scaled predictions
+        dummy = np.zeros((len(predictions), len(self.features)))
+        target_idx = self.features.index(self.target_column)
+        dummy[:, target_idx] = predictions.flatten()
+        
+        # Inverse transform
+        predictions_unscaled = self.scaler.inverse_transform(dummy)[:, target_idx]
+        
+        # Create a dummy array for actual values
+        dummy = np.zeros((len(y_test), len(self.features)))
+        dummy[:, target_idx] = y_test
+        actual_unscaled = self.scaler.inverse_transform(dummy)[:, target_idx]
+        
+        # Calculate metrics
+        mse = mean_squared_error(y_test, predictions)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y_test, predictions)
+        mse_unscaled = mean_squared_error(actual_unscaled, predictions_unscaled)
+        rmse_unscaled = np.sqrt(mse_unscaled)
+        
+        # Calculate directional accuracy
+        actual_diff = np.diff(actual_unscaled)
+        pred_diff = np.diff(predictions_unscaled)
+        directional_accuracy = np.mean((actual_diff > 0) == (pred_diff > 0))
+        
+        # Store metrics
+        self.metrics['performance'] = {
+            'mse': mse,
+            'rmse': rmse,
+            'mae': mae,
+            'mse_original': mse_unscaled,
+            'rmse_original': rmse_unscaled,
+            'directional_accuracy': directional_accuracy
+        }
+        
+        logger.info(f"RNN-GRU Model evaluation: RMSE={rmse:.6f}, RMSE (original)={rmse_unscaled:.2f}, " +
+                   f"Directional Accuracy={directional_accuracy:.2%}")
+        
+        return self.metrics['performance']
+    
+    def predict(self, data, sequence_length=None, target_column=None):
+        """
+        Make predictions with the trained model
+        
+        Parameters:
+        -----------
+        data : pandas.DataFrame
+            DataFrame with price and indicator data
+        sequence_length : int, optional
+            Number of timesteps to use for each input sequence
+        target_column : str, optional
+            Target column to predict
             
         Returns:
         --------
         numpy.ndarray
-            Array of predictions
+            Predicted values
         """
-        logger.info("Making predictions with RNN model")
-        
-        # Load model if not loaded
         if self.model is None:
-            self.load()
-            
-            if self.model is None:
-                logger.error("Failed to load model. Train or load a model first.")
+            try:
+                self.model = tf.keras.models.load_model(self.model_path)
+                logger.info(f"Loaded model from {self.model_path}")
+            except:
+                logger.error("No trained model found. Please train the model first.")
                 return None
         
-        # Prepare data similar to training
-        data = df.copy()
+        if sequence_length is not None:
+            self.sequence_length = sequence_length
         
-        # Add technical indicators
-        data = self.preprocessor.add_technical_indicators(data)
+        if target_column is not None:
+            self.target_column = target_column
+            
+        # Update features if needed
+        all_columns = [col for col in data.columns if col != 'timestamp' 
+                     and not pd.api.types.is_datetime64_any_dtype(data[col])]
         
-        # Add lag features for close price
-        data = self.preprocessor.add_lag_features(data, [target_column])
+        if not self.features or set(self.features) != set(all_columns):
+            self.features = all_columns
+            
+        # Extract feature data
+        data_for_prediction = data[self.features].values
         
-        # Add rolling features for close price
-        data = self.preprocessor.add_rolling_features(data, [target_column])
-        
-        # Add return features
-        data = self.preprocessor.add_return_features(data, [target_column])
-        
-        # Add time features if possible
-        if isinstance(data.index, pd.DatetimeIndex):
-            data = self.preprocessor.add_time_features(data)
-        
-        # Drop rows with NaN values
-        data.dropna(inplace=True)
-        
-        # Define feature columns (all except target)
-        feature_columns = [col for col in data.columns if col != target_column]
-        
-        # Scale features and target
-        data = self.preprocessor.scale_features(data, feature_columns)
-        data = self.preprocessor.scale_target(data, target_column)
+        # Scale the data
+        scaled_data = self.scaler.fit_transform(data_for_prediction)
         
         # Create sequences
-        X, y = self.preprocessor.create_sequences(
-            data, feature_columns, target_column, self.sequence_length)
+        X = []
+        for i in range(self.sequence_length, len(scaled_data)):
+            X.append(scaled_data[i-self.sequence_length:i])
+            
+        X = np.array(X)
         
         # Make predictions
         predictions = self.model.predict(X)
         
-        # Inverse scale predictions
-        if hasattr(self.preprocessor, 'scalers') and 'target' in self.preprocessor.scalers:
-            predictions = self.preprocessor.inverse_scale_target(predictions).flatten()
+        # Create a dummy array to inverse transform the scaled predictions
+        dummy = np.zeros((len(predictions), len(self.features)))
+        target_idx = self.features.index(self.target_column)
+        dummy[:, target_idx] = predictions.flatten()
         
-        # Create DataFrame with predictions
-        # The predictions are for sequence_length points after the start of each sequence
-        pred_index = data.index[self.sequence_length:]
-        if len(pred_index) > len(predictions):
-            pred_index = pred_index[:len(predictions)]
+        # Inverse transform
+        predictions_unscaled = self.scaler.inverse_transform(dummy)[:, target_idx]
         
-        predictions_df = pd.DataFrame({
-            'predictions': predictions
-        }, index=pred_index)
+        # Create a series with the same index as the input data
+        result = pd.Series(
+            index=data.index[self.sequence_length:],
+            data=predictions_unscaled,
+            name=f'predicted_{self.target_column}'
+        )
         
-        logger.info(f"Generated {len(predictions)} predictions")
+        logger.info(f"Generated {len(result)} predictions")
         
-        return predictions_df['predictions']
+        return result
     
-    def save(self, filepath='models/saved/rnn_model'):
+    def plot_predictions(self, actual, predictions, title="RNN-GRU Model Predictions"):
         """
-        Save the RNN model to disk
+        Plot actual vs predicted values
         
         Parameters:
         -----------
-        filepath : str
-            Path to save the model
-            
-        Returns:
-        --------
-        bool
-            True if successful, False otherwise
-        """
-        if self.model is None:
-            logger.error("No model to save. Train a model first.")
-            return False
-        
-        try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            # Save model
-            self.model.save(filepath)
-            logger.info(f"Model saved to {filepath}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save model: {str(e)}")
-            return False
-    
-    def load(self, filepath='models/saved/rnn_model'):
-        """
-        Load the RNN model from disk
-        
-        Parameters:
-        -----------
-        filepath : str
-            Path to the saved model
-            
-        Returns:
-        --------
-        bool
-            True if successful, False otherwise
-        """
-        try:
-            if not os.path.exists(filepath):
-                logger.error(f"Model file not found: {filepath}")
-                return False
-            
-            # Load model
-            self.model = load_model(filepath)
-            logger.info(f"Model loaded from {filepath}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to load model: {str(e)}")
-            return False
-    
-    def plot_training_history(self):
-        """
-        Plot training history
-        
-        Returns:
-        --------
-        matplotlib.figure.Figure
-            Figure object for the plot
-        """
-        if self.history is None:
-            logger.error("No training history. Train a model first.")
-            return None
-        
-        # Create figure
-        fig, axes = plt.subplots(2, 1, figsize=(12, 10))
-        
-        # Plot loss
-        axes[0].plot(self.history['loss'], label='Training Loss')
-        axes[0].plot(self.history['val_loss'], label='Validation Loss')
-        axes[0].set_title('Model Loss')
-        axes[0].set_ylabel('Loss')
-        axes[0].set_xlabel('Epoch')
-        axes[0].legend()
-        
-        # Plot MAE
-        axes[1].plot(self.history['mae'], label='Training MAE')
-        axes[1].plot(self.history['val_mae'], label='Validation MAE')
-        axes[1].set_title('Model MAE')
-        axes[1].set_ylabel('MAE')
-        axes[1].set_xlabel('Epoch')
-        axes[1].legend()
-        
-        # Adjust layout
-        plt.tight_layout()
-        
-        return fig
-    
-    def plot_predictions(self, y_true, y_pred, title="RNN Model Predictions"):
-        """
-        Plot predictions vs actual values
-        
-        Parameters:
-        -----------
-        y_true : numpy.ndarray
-            True values
-        y_pred : numpy.ndarray
-            Predicted values
+        actual : pandas.Series
+            Series with actual values
+        predictions : pandas.Series
+            Series with predicted values
         title : str
             Plot title
             
         Returns:
         --------
         matplotlib.figure.Figure
-            Figure object for the plot
+            Figure with the plot
         """
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 6))
+        plt.figure(figsize=(12, 6))
+        plt.plot(actual, label='Actual Prices', color='blue')
+        plt.plot(predictions, label='Predicted Prices', color='red', linestyle='--')
+        plt.title(title)
+        plt.xlabel('Date')
+        plt.ylabel('Price')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
         
-        # Plot true values
-        ax.plot(y_true, label='Actual')
-        
-        # Plot predictions
-        ax.plot(y_pred, label='Predicted')
-        
-        # Add labels and title
-        ax.set_title(title)
-        ax.set_ylabel('Price')
-        ax.set_xlabel('Time')
-        ax.legend()
-        
-        # Adjust layout
-        plt.tight_layout()
-        
-        return fig
+        return plt.gcf()
