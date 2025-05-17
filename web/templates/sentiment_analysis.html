@@ -1,0 +1,257 @@
+{% extends "layout.html" %}
+
+{% block title %}Analisi del Sentiment - CryptoTradeAnalyzer{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="dashboard-card">
+                <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                    <h2 class="dashboard-card-title mb-0">Analisi del Sentiment</h2>
+                    
+                    {% if user_datasets %}
+                    <div class="d-flex">
+                        <form class="d-flex" method="get" action="{{ url_for('sentiment_analysis') }}">
+                            <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                                {% for dataset in user_datasets %}
+                                <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                    {{ dataset.name }} ({{ dataset.symbol }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                            Carica Nuovo
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if selected_dataset %}
+                <div class="row mt-4">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Sentiment Complessivo</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="sentiment-summary text-center">
+                                    <h3 class="text-{{ sentiment_summary.color }}">{{ sentiment_summary.simplified }}</h3>
+                                    <div class="sentiment-score">
+                                        <div class="progress mt-3 mb-3">
+                                            {% set score_percent = ((sentiment_summary.score + 1) / 2 * 100) | int %}
+                                            <div class="progress-bar bg-{{ sentiment_summary.color }}" role="progressbar" 
+                                                 style="width: {{ score_percent }}%" 
+                                                 aria-valuenow="{{ score_percent }}" aria-valuemin="0" aria-valuemax="100">
+                                                {{ "%.2f"|format(sentiment_summary.score) }}
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <small class="text-danger">Negativo (-1.0)</small>
+                                            <small class="text-secondary">Neutrale (0.0)</small>
+                                            <small class="text-success">Positivo (1.0)</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {% if sentiment_summary.trend_direction %}
+                                <div class="mt-4">
+                                    <p class="mb-1">Andamento Recente:</p>
+                                    <p>Il sentiment è <strong>{{ sentiment_summary.trend_direction }}</strong> 
+                                       con intensità <strong>{{ sentiment_summary.trend_strength }}</strong>.</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Contesto di Mercato</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6 class="mb-3">Interpretazione del Sentiment</h6>
+                                        <p>Il sentiment attuale per {{ selected_dataset.symbol }} è 
+                                            <strong>{{ sentiment_summary.interpretation }}</strong>.</p>
+                                        
+                                        <p>Basato sull'analisi di {{ news_count }} notizie/eventi di mercato
+                                           dal {{ date_range.start }} al {{ date_range.end }}.</p>
+                                        
+                                        {% if sentiment_summary.trend_direction %}
+                                        <p>La tendenza recente indica un <strong>{{ sentiment_summary.trend_direction }}</strong>
+                                           livello di ottimismo nel mercato.</p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="mb-3">Possibili Implicazioni</h6>
+                                        {% if sentiment_summary.score > 0.4 %}
+                                        <ul>
+                                            <li>Possibile continuazione del trend rialzista</li>
+                                            <li>Aumentata probabilità di movimenti positivi</li>
+                                            <li>Maggiore fiducia degli investitori</li>
+                                        </ul>
+                                        {% elif sentiment_summary.score > 0 %}
+                                        <ul>
+                                            <li>Tendenza moderatamente positiva</li>
+                                            <li>Possibili movimenti laterali con bias rialzista</li>
+                                            <li>Cauto ottimismo nel mercato</li>
+                                        </ul>
+                                        {% elif sentiment_summary.score > -0.4 %}
+                                        <ul>
+                                            <li>Incertezza nel mercato</li>
+                                            <li>Possibile movimento laterale</li>
+                                            <li>Cautela tra gli investitori</li>
+                                        </ul>
+                                        {% else %}
+                                        <ul>
+                                            <li>Possibile continuazione del trend ribassista</li>
+                                            <li>Aumentata probabilità di movimenti negativi</li>
+                                            <li>Prevalente pessimismo tra gli investitori</li>
+                                        </ul>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chart-container mt-4">
+                    <h4 class="mb-3">Andamento del Sentiment: {{ selected_dataset.symbol }}</h4>
+                    <img src="data:image/png;base64,{{ sentiment_chart }}" class="img-fluid" alt="Grafico Sentiment">
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Notizie Recenti</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Data</th>
+                                                <th>Titolo</th>
+                                                <th>Sentiment</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for news in recent_news %}
+                                            <tr>
+                                                <td>{{ news.date }}</td>
+                                                <td>{{ news.title }}</td>
+                                                <td>
+                                                    <span class="badge bg-{{ news.sentiment_color }}">
+                                                        {{ news.sentiment_label }}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Azioni</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <a href="{{ url_for('custom_strategy', sentiment_data=sentiment_data_id) }}" class="btn btn-primary d-block mb-2">
+                                            Crea Strategia Basata sul Sentiment
+                                        </a>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <a href="{{ url_for('backtest') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-success d-block mb-2">
+                                            Esegui Backtest
+                                        </a>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <a href="#" class="btn btn-info d-block mb-2" id="updateSentimentBtn">
+                                            Aggiorna Analisi
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info mt-3">
+                    <p>Nessun dataset selezionato o disponibile. <a href="{{ url_for('upload') }}">Carica un nuovo dataset</a> per iniziare l'analisi del sentiment.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if selected_dataset %}
+<script>
+document.getElementById('updateSentimentBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    
+    // Mostra un indicatore di caricamento
+    Swal.fire({
+        title: 'Aggiornamento in corso...',
+        html: 'Sto aggiornando l\'analisi del sentiment per {{ selected_dataset.symbol }}.<br>Questa operazione potrebbe richiedere alcuni secondi.',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    // Invia la richiesta al server
+    fetch('{{ url_for("update_sentiment", dataset_id=selected_dataset.id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Aggiornamento completato!',
+                text: data.message,
+                confirmButtonText: 'OK'
+            }).then(() => {
+                // Ricarica la pagina per mostrare i nuovi dati
+                window.location.reload();
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Errore',
+                text: data.message || 'Si è verificato un errore durante l\'aggiornamento dell\'analisi.',
+                confirmButtonText: 'OK'
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Errore:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Errore',
+            text: 'Si è verificato un errore durante la comunicazione con il server.',
+            confirmButtonText: 'OK'
+        });
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

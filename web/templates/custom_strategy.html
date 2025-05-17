@@ -1,0 +1,793 @@
+{% extends "layout.html" %}
+
+{% block title %}Strategie Personalizzate - CryptoTradeAnalyzer{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="dashboard-card">
+                <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                    <h2 class="dashboard-card-title mb-0">Strategie di Trading Personalizzate</h2>
+                    
+                    {% if user_datasets %}
+                    <div class="d-flex">
+                        <form class="d-flex" method="get" action="{{ url_for('custom_strategy') }}">
+                            <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                                {% for dataset in user_datasets %}
+                                <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                    {{ dataset.name }} ({{ dataset.symbol }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                            Carica Nuovo
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if selected_dataset %}
+                <div class="row mt-4">
+                    <div class="col-md-5">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Crea Nuova Strategia</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="createStrategyForm" action="{{ url_for('create_strategy') }}" method="post">
+                                    <input type="hidden" name="dataset_id" value="{{ selected_dataset.id }}">
+                                    <input type="hidden" name="sentiment_data" value="{{ sentiment_data }}">
+                                    
+                                    <div class="mb-3">
+                                        <label for="strategyName" class="form-label">Nome Strategia</label>
+                                        <input type="text" class="form-control" id="strategyName" name="name" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="strategyDescription" class="form-label">Descrizione</label>
+                                        <textarea class="form-control" id="strategyDescription" name="description" rows="2"></textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="strategyType" class="form-label">Tipo di Strategia</label>
+                                        <select class="form-select" id="strategyType" name="strategy_type" required>
+                                            <option value="" selected disabled>Seleziona un tipo...</option>
+                                            {% for strategy in available_strategies %}
+                                            <option value="{{ strategy.type }}">{{ strategy.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    
+                                    <div id="strategyParameters" class="mb-3">
+                                        <!-- I parametri verranno aggiunti dinamicamente in base al tipo di strategia -->
+                                    </div>
+                                    
+                                    <div class="text-end">
+                                        <button type="submit" class="btn btn-primary">Crea Strategia</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-7">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Le Tue Strategie</h5>
+                            </div>
+                            <div class="card-body">
+                                {% if user_strategies %}
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Nome</th>
+                                                <th>Tipo</th>
+                                                <th>Creata</th>
+                                                <th>Azioni</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for strategy in user_strategies %}
+                                            <tr>
+                                                <td>{{ strategy.name }}</td>
+                                                <td>{{ strategy.strategy_type }}</td>
+                                                <td>{{ strategy.created_at.strftime('%d/%m/%Y') }}</td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-info view-strategy" 
+                                                            data-strategy-id="{{ strategy.id }}">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-primary edit-strategy" 
+                                                            data-strategy-id="{{ strategy.id }}">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-danger delete-strategy" 
+                                                            data-strategy-id="{{ strategy.id }}" 
+                                                            data-strategy-name="{{ strategy.name }}">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <div class="text-center p-4">
+                                    <p>Non hai ancora creato strategie personalizzate.</p>
+                                    <p>Crea la tua prima strategia utilizzando il form a sinistra.</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if selected_strategy %}
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Visualizzazione Strategia: {{ selected_strategy.name }}</h5>
+                                <a href="{{ url_for('custom_strategy') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-times"></i>
+                                </a>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <strong>Tipo Strategia:</strong>
+                                            <p>{{ selected_strategy.strategy_type }}</p>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Descrizione:</strong>
+                                            <p>{{ selected_strategy.description or 'Nessuna descrizione disponibile' }}</p>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Data Creazione:</strong>
+                                            <p>{{ selected_strategy.created_at.strftime('%d/%m/%Y %H:%M') }}</p>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Parametri:</strong>
+                                            <ul class="list-group">
+                                                {% for key, value in selected_strategy.parameters.items() %}
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    {{ key }}
+                                                    <span class="badge bg-primary rounded-pill">{{ value }}</span>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="chart-container">
+                                            <h6 class="mb-3">Segnali Generati</h6>
+                                            <img src="data:image/png;base64,{{ strategy_chart }}" class="img-fluid" alt="Grafico Strategia">
+                                        </div>
+                                        <div class="strategy-stats mt-3">
+                                            <h6 class="mb-2">Statistiche:</h6>
+                                            <div class="row">
+                                                <div class="col-md-3">
+                                                    <div class="card border-light mb-3">
+                                                        <div class="card-body text-center">
+                                                            <h5 class="card-title">{{ strategy_stats.buy_signals }}</h5>
+                                                            <p class="card-text text-success">Segnali Acquisto</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="card border-light mb-3">
+                                                        <div class="card-body text-center">
+                                                            <h5 class="card-title">{{ strategy_stats.sell_signals }}</h5>
+                                                            <p class="card-text text-danger">Segnali Vendita</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="card border-light mb-3">
+                                                        <div class="card-body text-center">
+                                                            <h5 class="card-title">{{ strategy_stats.hold_signals }}</h5>
+                                                            <p class="card-text text-secondary">Segnali Attesa</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="card border-light mb-3">
+                                                        <div class="card-body text-center">
+                                                            <h5 class="card-title">{{ strategy_stats.last_signal }}</h5>
+                                                            <p class="card-text">Ultimo Segnale</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-12">
+                                        <div class="d-flex justify-content-end">
+                                            <a href="{{ url_for('backtest_strategy', strategy_id=selected_strategy.id, dataset_id=selected_dataset.id) }}" class="btn btn-success me-2">
+                                                <i class="fas fa-chart-line me-2"></i>Esegui Backtest
+                                            </a>
+                                            <button type="button" class="btn btn-warning me-2" id="updateAIBtn" 
+                                                    data-strategy-id="{{ selected_strategy.id }}" 
+                                                    data-dataset-id="{{ selected_dataset.id }}">
+                                                <i class="fas fa-robot me-2"></i>Ottimizza con IA
+                                            </button>
+                                            <button type="button" class="btn btn-info" id="exportBtn" 
+                                                    data-strategy-id="{{ selected_strategy.id }}">
+                                                <i class="fas fa-file-export me-2"></i>Esporta
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">Combina Strategie</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>Combina due o più strategie per creare una strategia ensemble con prestazioni migliori.</p>
+                                <form id="combineStrategiesForm" action="{{ url_for('combine_strategies') }}" method="post">
+                                    <input type="hidden" name="dataset_id" value="{{ selected_dataset.id }}">
+                                    
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="combinedName" class="form-label">Nome Strategia Combinata</label>
+                                            <input type="text" class="form-control" id="combinedName" name="name" required>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="combinedDescription" class="form-label">Descrizione</label>
+                                            <input type="text" class="form-control" id="combinedDescription" name="description">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="row mb-3">
+                                        <div class="col-md-12">
+                                            <label class="form-label">Seleziona le Strategie da Combinare</label>
+                                            <div class="strategy-selector">
+                                                {% if user_strategies %}
+                                                <div class="row">
+                                                    {% for strategy in user_strategies %}
+                                                    <div class="col-md-4 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input strategy-checkbox" type="checkbox" 
+                                                                   name="strategy_ids" value="{{ strategy.id }}" 
+                                                                   id="strategy{{ strategy.id }}">
+                                                            <label class="form-check-label" for="strategy{{ strategy.id }}">
+                                                                {{ strategy.name }} ({{ strategy.strategy_type }})
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                                {% else %}
+                                                <div class="alert alert-info">
+                                                    Devi prima creare almeno due strategie singole per poterle combinare.
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="row mb-3">
+                                        <div class="col-md-12">
+                                            <label class="form-label">Pesi delle Strategie</label>
+                                            <div id="weightsContainer" class="weights-container">
+                                                <!-- I pesi verranno aggiunti dinamicamente in base alle strategie selezionate -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="text-end">
+                                        <button type="submit" class="btn btn-primary" id="combineBtn" disabled>
+                                            Combina Strategie
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info mt-3">
+                    <p>Nessun dataset selezionato o disponibile. <a href="{{ url_for('upload') }}">Carica un nuovo dataset</a> per iniziare a creare strategie.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteStrategyModalLabel">Conferma Eliminazione</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sei sicuro di voler eliminare la strategia <strong id="strategyNameToDelete"></strong>?</p>
+                <p class="text-danger">Questa azione non può essere annullata.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                <form id="deleteStrategyForm" action="{{ url_for('delete_strategy') }}" method="post">
+                    <input type="hidden" name="strategy_id" id="strategyIdToDelete">
+                    <input type="hidden" name="dataset_id" value="{{ selected_dataset.id if selected_dataset else '' }}">
+                    <button type="submit" class="btn btn-danger">Elimina</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editStrategyModal" tabindex="-1" aria-labelledby="editStrategyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editStrategyModalLabel">Modifica Strategia</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editStrategyForm" action="{{ url_for('update_strategy') }}" method="post">
+                    <input type="hidden" name="strategy_id" id="strategyIdToEdit">
+                    <input type="hidden" name="dataset_id" value="{{ selected_dataset.id if selected_dataset else '' }}">
+                    
+                    <div class="mb-3">
+                        <label for="editStrategyName" class="form-label">Nome Strategia</label>
+                        <input type="text" class="form-control" id="editStrategyName" name="name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="editStrategyDescription" class="form-label">Descrizione</label>
+                        <textarea class="form-control" id="editStrategyDescription" name="description" rows="2"></textarea>
+                    </div>
+                    
+                    <div id="editStrategyParameters" class="mb-3">
+                        <!-- I parametri verranno aggiunti dinamicamente -->
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                <button type="button" class="btn btn-primary" id="saveEditBtn">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if selected_dataset %}
+<script>
+// Informazioni sulle strategie disponibili
+const availableStrategies = {{ available_strategies_json|safe }};
+
+// When strategy type changes, update the parameters form
+document.getElementById('strategyType').addEventListener('change', function() {
+    const strategyType = this.value;
+    updateParametersForm(strategyType, 'strategyParameters');
+});
+
+// Handle deletion confirmation
+document.querySelectorAll('.delete-strategy').forEach(button => {
+    button.addEventListener('click', function() {
+        const strategyId = this.getAttribute('data-strategy-id');
+        const strategyName = this.getAttribute('data-strategy-name');
+        
+        document.getElementById('strategyIdToDelete').value = strategyId;
+        document.getElementById('strategyNameToDelete').textContent = strategyName;
+        
+        const deleteModal = new bootstrap.Modal(document.getElementById('deleteStrategyModal'));
+        deleteModal.show();
+    });
+});
+
+// Handle edit button clicks
+document.querySelectorAll('.edit-strategy').forEach(button => {
+    button.addEventListener('click', function() {
+        const strategyId = this.getAttribute('data-strategy-id');
+        
+        // Show loading state
+        Swal.fire({
+            title: 'Caricamento...',
+            html: 'Recupero i dati della strategia...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        // Fetch strategy data
+        fetch(`{{ url_for('get_strategy_data') }}?strategy_id=${strategyId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const strategy = data.strategy;
+                    
+                    // Fill the form
+                    document.getElementById('strategyIdToEdit').value = strategy.id;
+                    document.getElementById('editStrategyName').value = strategy.name;
+                    document.getElementById('editStrategyDescription').value = strategy.description || '';
+                    
+                    // Update parameters form
+                    updateEditParametersForm(strategy.strategy_type, strategy.parameters);
+                    
+                    // Close loading and show edit modal
+                    Swal.close();
+                    const editModal = new bootstrap.Modal(document.getElementById('editStrategyModal'));
+                    editModal.show();
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Errore',
+                        text: data.message || 'Si è verificato un errore durante il recupero dei dati della strategia.',
+                        confirmButtonText: 'OK'
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Errore:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Errore',
+                    text: 'Si è verificato un errore durante la comunicazione con il server.',
+                    confirmButtonText: 'OK'
+                });
+            });
+    });
+});
+
+// Save edited strategy
+document.getElementById('saveEditBtn').addEventListener('click', function() {
+    document.getElementById('editStrategyForm').submit();
+});
+
+// Strategy combination
+const strategyCheckboxes = document.querySelectorAll('.strategy-checkbox');
+const weightsContainer = document.getElementById('weightsContainer');
+const combineBtn = document.getElementById('combineBtn');
+
+strategyCheckboxes.forEach(checkbox => {
+    checkbox.addEventListener('change', updateWeightsContainer);
+});
+
+function updateWeightsContainer() {
+    weightsContainer.innerHTML = '';
+    const selectedStrategies = Array.from(strategyCheckboxes)
+        .filter(checkbox => checkbox.checked);
+    
+    if (selectedStrategies.length >= 2) {
+        combineBtn.disabled = false;
+        
+        // Create weight inputs for each selected strategy
+        selectedStrategies.forEach(checkbox => {
+            const strategyId = checkbox.value;
+            const strategyName = checkbox.nextElementSibling.textContent.trim();
+            
+            const weightGroup = document.createElement('div');
+            weightGroup.className = 'mb-2';
+            weightGroup.innerHTML = `
+                <label class="form-label">${strategyName}</label>
+                <input type="range" class="form-range weight-slider" min="1" max="10" value="5"
+                       name="weights[${strategyId}]" id="weight${strategyId}" 
+                       oninput="updateWeightValue('weight${strategyId}')">
+                <div class="d-flex justify-content-between">
+                    <small>1</small>
+                    <small id="weight${strategyId}Value">5</small>
+                    <small>10</small>
+                </div>
+            `;
+            
+            weightsContainer.appendChild(weightGroup);
+        });
+    } else {
+        combineBtn.disabled = true;
+        weightsContainer.innerHTML = '<div class="alert alert-warning">Seleziona almeno due strategie per combinarle.</div>';
+    }
+}
+
+function updateWeightValue(sliderId) {
+    const slider = document.getElementById(sliderId);
+    const valueDisplay = document.getElementById(sliderId + 'Value');
+    valueDisplay.textContent = slider.value;
+}
+
+// AI optimization
+document.getElementById('updateAIBtn').addEventListener('click', function() {
+    const strategyId = this.getAttribute('data-strategy-id');
+    const datasetId = this.getAttribute('data-dataset-id');
+    
+    // Conferma dall'utente
+    Swal.fire({
+        title: 'Ottimizzazione con IA',
+        html: 'L\'IA analizzerà la strategia attuale e tenterà di ottimizzare i parametri per migliorare le prestazioni sui dati storici.<br><br>Questo processo potrebbe richiedere alcuni minuti. Vuoi procedere?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ottimizza',
+        cancelButtonText: 'Annulla'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Mostra indicatore di caricamento
+            Swal.fire({
+                title: 'Ottimizzazione in corso...',
+                html: 'L\'IA sta analizzando i dati e ottimizzando la strategia.<br>Questo processo potrebbe richiedere alcuni minuti.',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            // Invia la richiesta al server
+            fetch('{{ url_for("optimize_strategy") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    strategy_id: strategyId,
+                    dataset_id: datasetId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Ottimizzazione completata!',
+                        html: data.message,
+                        confirmButtonText: 'OK'
+                    }).then(() => {
+                        // Ricarica la pagina per mostrare la strategia ottimizzata
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Errore',
+                        text: data.message || 'Si è verificato un errore durante l\'ottimizzazione della strategia.',
+                        confirmButtonText: 'OK'
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Errore:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Errore',
+                    text: 'Si è verificato un errore durante la comunicazione con il server.',
+                    confirmButtonText: 'OK'
+                });
+            });
+        }
+    });
+});
+
+// Estrategia export
+document.getElementById('exportBtn').addEventListener('click', function() {
+    const strategyId = this.getAttribute('data-strategy-id');
+    
+    // Invia la richiesta al server
+    fetch(`{{ url_for('export_strategy') }}?strategy_id=${strategyId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Crea un elemento per il download
+                const blob = new Blob([JSON.stringify(data.strategy_data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.filename || 'strategy.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Errore',
+                    text: data.message || 'Si è verificato un errore durante l\'esportazione della strategia.',
+                    confirmButtonText: 'OK'
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Errore:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Errore',
+                text: 'Si è verificato un errore durante la comunicazione con il server.',
+                confirmButtonText: 'OK'
+            });
+        });
+});
+
+// Helper function to update parameters form
+function updateParametersForm(strategyType, containerId) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    
+    if (!strategyType) return;
+    
+    // Find the strategy in the available strategies
+    const strategy = availableStrategies.find(s => s.type === strategyType);
+    if (!strategy) return;
+    
+    // Add parameters to the form
+    const parameters = strategy.parameters;
+    for (const [paramName, paramData] of Object.entries(parameters)) {
+        const paramContainer = document.createElement('div');
+        paramContainer.className = 'mb-3';
+        
+        // Create label
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.setAttribute('for', `param_${paramName}`);
+        label.textContent = paramData.name;
+        
+        // Small help text
+        const helpText = document.createElement('small');
+        helpText.className = 'd-block text-muted mb-2';
+        helpText.textContent = paramData.description;
+        
+        paramContainer.appendChild(label);
+        paramContainer.appendChild(helpText);
+        
+        // Create input based on parameter type
+        let input;
+        switch (paramData.type) {
+            case 'int':
+            case 'float':
+                input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'form-control';
+                input.id = `param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                input.value = paramData.default;
+                
+                if (paramData.type === 'float') {
+                    input.step = paramData.step || 0.1;
+                } else {
+                    input.step = 1;
+                }
+                
+                if (paramData.min !== undefined) input.min = paramData.min;
+                if (paramData.max !== undefined) input.max = paramData.max;
+                break;
+                
+            case 'select':
+                input = document.createElement('select');
+                input.className = 'form-select';
+                input.id = `param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                
+                for (const option of paramData.options) {
+                    const optionEl = document.createElement('option');
+                    optionEl.value = option;
+                    optionEl.textContent = option;
+                    if (option === paramData.default) optionEl.selected = true;
+                    input.appendChild(optionEl);
+                }
+                break;
+                
+            default:
+                input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control';
+                input.id = `param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                input.value = paramData.default;
+        }
+        
+        paramContainer.appendChild(input);
+        container.appendChild(paramContainer);
+    }
+}
+
+// Helper function to update edit parameters form
+function updateEditParametersForm(strategyType, currentParameters) {
+    const container = document.getElementById('editStrategyParameters');
+    container.innerHTML = '';
+    
+    if (!strategyType) return;
+    
+    // Find the strategy in the available strategies
+    const strategy = availableStrategies.find(s => s.type === strategyType);
+    if (!strategy) return;
+    
+    // Add strategy type as hidden input
+    const typeInput = document.createElement('input');
+    typeInput.type = 'hidden';
+    typeInput.name = 'strategy_type';
+    typeInput.value = strategyType;
+    container.appendChild(typeInput);
+    
+    // Add parameters to the form
+    const parameters = strategy.parameters;
+    for (const [paramName, paramData] of Object.entries(parameters)) {
+        const paramContainer = document.createElement('div');
+        paramContainer.className = 'mb-3';
+        
+        // Create label
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.setAttribute('for', `edit_param_${paramName}`);
+        label.textContent = paramData.name;
+        
+        // Small help text
+        const helpText = document.createElement('small');
+        helpText.className = 'd-block text-muted mb-2';
+        helpText.textContent = paramData.description;
+        
+        paramContainer.appendChild(label);
+        paramContainer.appendChild(helpText);
+        
+        // Current value
+        const currentValue = currentParameters && currentParameters[paramName] !== undefined 
+            ? currentParameters[paramName] 
+            : paramData.default;
+        
+        // Create input based on parameter type
+        let input;
+        switch (paramData.type) {
+            case 'int':
+            case 'float':
+                input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'form-control';
+                input.id = `edit_param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                input.value = currentValue;
+                
+                if (paramData.type === 'float') {
+                    input.step = paramData.step || 0.1;
+                } else {
+                    input.step = 1;
+                }
+                
+                if (paramData.min !== undefined) input.min = paramData.min;
+                if (paramData.max !== undefined) input.max = paramData.max;
+                break;
+                
+            case 'select':
+                input = document.createElement('select');
+                input.className = 'form-select';
+                input.id = `edit_param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                
+                for (const option of paramData.options) {
+                    const optionEl = document.createElement('option');
+                    optionEl.value = option;
+                    optionEl.textContent = option;
+                    if (option === currentValue) optionEl.selected = true;
+                    input.appendChild(optionEl);
+                }
+                break;
+                
+            default:
+                input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control';
+                input.id = `edit_param_${paramName}`;
+                input.name = `parameters[${paramName}]`;
+                input.value = currentValue;
+        }
+        
+        paramContainer.appendChild(input);
+        container.appendChild(paramContainer);
+    }
+}
+</script>
+{% endif %}
+{% endblock %}

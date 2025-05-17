@@ -938,6 +938,8 @@ def delete_dataset(dataset_id):
     # Reindirizza alla pagina di analisi
     return redirect('/analysis')
 
+@app.route('/analysis')
+@app.route('/analysis/<int:dataset_id>')
 def analysis(dataset_id=None):
     """Data analysis page"""
     # Check if user is logged in
