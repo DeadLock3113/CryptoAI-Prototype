@@ -226,6 +226,10 @@ def get_account_balances(user):
     eur_usd_rate = get_eur_usd_exchange_rate()
     results['eur_usd_rate'] = eur_usd_rate
     
+    # Aggiungiamo valori fissi per EUR e USD
+    eur_to_usdt_rate = 1.0 / eur_usd_rate  # 1 EUR = X USDT
+    usd_to_usdt_rate = 1.0  # 1 USD = 1 USDT (approssimativamente)
+    
     # Controlla se l'utente ha configurato Binance
     if user.binance_api_key and user.binance_api_secret:
         try:
@@ -246,18 +250,23 @@ def get_account_balances(user):
                 
                 results['currencies'][currency] += amount
                 
-                # Converti in USDT se è disponibile il prezzo
+                # Converti in USDT 
+                usdt_value = 0.0
+                
                 if currency in prices:
                     usdt_value = amount * prices[currency]
+                elif currency == 'USDT':
+                    usdt_value = amount
+                elif currency == 'EUR':
+                    usdt_value = amount * eur_to_usdt_rate
+                elif currency == 'USD':
+                    usdt_value = amount * usd_to_usdt_rate
+                
+                if usdt_value > 0:
                     balance['usdt_value'] = usdt_value
                     balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
                     results['currency_values'][currency] += usdt_value
-                elif currency == 'USDT':
-                    balance['usdt_value'] = amount
-                    balance['eur_value'] = amount * eur_usd_rate
-                    results['total_balance_usdt'] += amount
-                    results['currency_values'][currency] += amount
             
             results['exchanges'].append(binance_balance)
         except ExchangeAPIError as e:
@@ -283,18 +292,23 @@ def get_account_balances(user):
                 
                 results['currencies'][currency] += amount
                 
-                # Converti in USDT se è disponibile il prezzo
+                # Converti in USDT
+                usdt_value = 0.0
+                
                 if currency in prices:
                     usdt_value = amount * prices[currency]
+                elif currency == 'USDT':
+                    usdt_value = amount
+                elif currency == 'EUR':
+                    usdt_value = amount * eur_to_usdt_rate
+                elif currency == 'USD':
+                    usdt_value = amount * usd_to_usdt_rate
+                
+                if usdt_value > 0:
                     balance['usdt_value'] = usdt_value
                     balance['eur_value'] = usdt_value * eur_usd_rate
                     results['total_balance_usdt'] += usdt_value
                     results['currency_values'][currency] += usdt_value
-                elif currency == 'USDT':
-                    balance['usdt_value'] = amount
-                    balance['eur_value'] = amount * eur_usd_rate
-                    results['total_balance_usdt'] += amount
-                    results['currency_values'][currency] += amount
             
             results['exchanges'].append(kraken_balance)
         except ExchangeAPIError as e:
