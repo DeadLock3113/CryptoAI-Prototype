@@ -513,7 +513,7 @@ def analysis(dataset_id=None):
         flash(f'Errore durante l\'analisi del dataset: {str(e)}', 'danger')
         return redirect(url_for('upload'))
 
-@app.route('/indicators')
+@app.route('/indicators', methods=['GET', 'POST'])
 def indicators():
     """Technical indicators page"""
     # Check if user is logged in
@@ -525,9 +525,206 @@ def indicators():
     # Get user's datasets
     user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
     
-    return render_template('indicators.html', user_datasets=user_datasets)
+    # Get selected dataset if provided
+    dataset_id = request.args.get('dataset_id', type=int) or request.form.get('dataset_id', type=int)
+    selected_dataset = None
+    
+    if dataset_id:
+        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+        
+    # Handle POST request to calculate indicators
+    if request.method == 'POST' and selected_dataset:
+        try:
+            # Get the indicators to calculate
+            selected_indicators = request.form.getlist('indicators')
+            
+            if not selected_indicators:
+                flash('Seleziona almeno un indicatore da calcolare.', 'warning')
+                return redirect(url_for('indicators', dataset_id=dataset_id))
+            
+            # Load dataset
+            data = load_dataset(selected_dataset.id)
+            
+            if data is None:
+                flash('Impossibile caricare il dataset. File non trovato.', 'danger')
+                return redirect(url_for('indicators'))
+            
+            # Calculate selected indicators
+            calculated = []
+            
+            # SMA - Simple Moving Average
+            if 'sma' in selected_indicators:
+                period = int(request.form.get('sma_period', 20))
+                data[f'SMA_{period}'] = data['close'].rolling(window=period).mean()
+                calculated.append(f'SMA ({period})')
+            
+            # EMA - Exponential Moving Average
+            if 'ema' in selected_indicators:
+                period = int(request.form.get('ema_period', 20))
+                data[f'EMA_{period}'] = data['close'].ewm(span=period, adjust=False).mean()
+                calculated.append(f'EMA ({period})')
+            
+            # MACD - Moving Average Convergence Divergence
+            if 'macd' in selected_indicators:
+                fast = int(request.form.get('macd_fast', 12))
+                slow = int(request.form.get('macd_slow', 26))
+                signal = int(request.form.get('macd_signal', 9))
+                
+                data[f'EMA_{fast}'] = data['close'].ewm(span=fast, adjust=False).mean()
+                data[f'EMA_{slow}'] = data['close'].ewm(span=slow, adjust=False).mean()
+                
+                # MACD Line
+                data['MACD'] = data[f'EMA_{fast}'] - data[f'EMA_{slow}']
+                
+                # Signal Line
+                data['MACD_Signal'] = data['MACD'].ewm(span=signal, adjust=False).mean()
+                
+                # Histogram
+                data['MACD_Hist'] = data['MACD'] - data['MACD_Signal']
+                
+                calculated.append(f'MACD ({fast},{slow},{signal})')
+            
+            # RSI - Relative Strength Index
+            if 'rsi' in selected_indicators:
+                period = int(request.form.get('rsi_period', 14))
+                
+                # Calculate price changes
+                delta = data['close'].diff()
+                
+                # Separate gains and losses
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
+                
+                # Calculate average gain and loss
+                avg_gain = gain.rolling(window=period).mean()
+                avg_loss = loss.rolling(window=period).mean()
+                
+                # Calculate RS and RSI
+                rs = avg_gain / avg_loss
+                data['RSI'] = 100 - (100 / (1 + rs))
+                
+                calculated.append(f'RSI ({period})')
+            
+            # Bollinger Bands
+            if 'bb' in selected_indicators:
+                period = int(request.form.get('bb_period', 20))
+                stddev = float(request.form.get('bb_stddev', 2))
+                
+                # Calculate middle band (SMA)
+                data['BB_Middle'] = data['close'].rolling(window=period).mean()
+                
+                # Calculate standard deviation
+                data['BB_StdDev'] = data['close'].rolling(window=period).std()
+                
+                # Calculate upper and lower bands
+                data['BB_Upper'] = data['BB_Middle'] + (data['BB_StdDev'] * stddev)
+                data['BB_Lower'] = data['BB_Middle'] - (data['BB_StdDev'] * stddev)
+                
+                calculated.append(f'Bollinger Bands ({period}, {stddev})')
+            
+            # Stochastic Oscillator
+            if 'stoch' in selected_indicators:
+                k_period = int(request.form.get('stoch_k', 14))
+                d_period = int(request.form.get('stoch_d', 3))
+                smooth = int(request.form.get('stoch_smooth', 3))
+                
+                # Calculate %K
+                low_min = data['low'].rolling(window=k_period).min()
+                high_max = data['high'].rolling(window=k_period).max()
+                
+                data['%K'] = 100 * ((data['close'] - low_min) / (high_max - low_min))
+                
+                # Apply smoothing to %K if needed
+                if smooth > 1:
+                    data['%K'] = data['%K'].rolling(window=smooth).mean()
+                
+                # Calculate %D (SMA of %K)
+                data['%D'] = data['%K'].rolling(window=d_period).mean()
+                
+                calculated.append(f'Stochastic ({k_period}, {d_period}, {smooth})')
+            
+            # Generate price chart with indicators
+            plt.figure(figsize=(12, 8))
+            
+            # Plot price
+            plt.subplot(2, 1, 1)
+            plt.plot(data.index, data['close'], label='Prezzo')
+            
+            # Plot trend indicators on price chart
+            if 'sma' in selected_indicators:
+                period = int(request.form.get('sma_period', 20))
+                plt.plot(data.index, data[f'SMA_{period}'], label=f'SMA {period}')
+            
+            if 'ema' in selected_indicators:
+                period = int(request.form.get('ema_period', 20))
+                plt.plot(data.index, data[f'EMA_{period}'], label=f'EMA {period}')
+            
+            if 'bb' in selected_indicators:
+                plt.plot(data.index, data['BB_Upper'], 'r--', label='BB Upper')
+                plt.plot(data.index, data['BB_Middle'], 'g--', label='BB Middle')
+                plt.plot(data.index, data['BB_Lower'], 'r--', label='BB Lower')
+            
+            plt.title(f"{selected_dataset.symbol} - Prezzo con Indicatori")
+            plt.ylabel('Prezzo')
+            plt.grid(True, alpha=0.3)
+            plt.legend(loc='upper left')
+            
+            # Plot oscillators in separate subplot
+            has_oscillators = 'rsi' in selected_indicators or 'macd' in selected_indicators or 'stoch' in selected_indicators
+            
+            if has_oscillators:
+                plt.subplot(2, 1, 2)
+                
+                if 'rsi' in selected_indicators:
+                    plt.plot(data.index, data['RSI'], label='RSI')
+                    plt.axhline(y=70, color='r', linestyle='--', alpha=0.3)
+                    plt.axhline(y=30, color='g', linestyle='--', alpha=0.3)
+                
+                if 'macd' in selected_indicators:
+                    plt.plot(data.index, data['MACD'], label='MACD')
+                    plt.plot(data.index, data['MACD_Signal'], label='Signal')
+                    
+                    # Plot histogram as bars
+                    plt.bar(data.index, data['MACD_Hist'], width=1, label='Histogram', alpha=0.3)
+                
+                if 'stoch' in selected_indicators:
+                    plt.plot(data.index, data['%K'], label='%K')
+                    plt.plot(data.index, data['%D'], label='%D')
+                    plt.axhline(y=80, color='r', linestyle='--', alpha=0.3)
+                    plt.axhline(y=20, color='g', linestyle='--', alpha=0.3)
+                
+                plt.title("Oscillatori")
+                plt.ylabel('Valore')
+                plt.grid(True, alpha=0.3)
+                plt.legend(loc='upper left')
+            
+            # Save plot to buffer
+            buffer = io.BytesIO()
+            plt.tight_layout()
+            plt.savefig(buffer, format='png', dpi=100)
+            buffer.seek(0)
+            
+            # Convert plot to base64 for embedding in HTML
+            chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close()
+            
+            flash(f'Indicatori calcolati con successo: {", ".join(calculated)}', 'success')
+            return render_template('indicators_result.html', 
+                                  user_datasets=user_datasets,
+                                  selected_dataset=selected_dataset,
+                                  chart_data=chart_data,
+                                  calculated=calculated)
+            
+        except Exception as e:
+            logger.error(f"Errore durante il calcolo degli indicatori: {str(e)}")
+            flash(f'Errore durante il calcolo degli indicatori: {str(e)}', 'danger')
+            return redirect(url_for('indicators', dataset_id=dataset_id))
+    
+    return render_template('indicators.html', 
+                          user_datasets=user_datasets,
+                          selected_dataset=selected_dataset)
 
-@app.route('/backtest')
+@app.route('/backtest', methods=['GET', 'POST'])
 def backtest():
     """Backtesting page"""
     # Check if user is logged in
@@ -539,7 +736,356 @@ def backtest():
     # Get user's datasets
     user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
     
-    return render_template('backtest.html', user_datasets=user_datasets)
+    # Get selected dataset if provided
+    dataset_id = request.args.get('dataset_id', type=int) or request.form.get('dataset_id', type=int)
+    selected_dataset = None
+    
+    if dataset_id:
+        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+    
+    # Handle POST request to run backtest
+    if request.method == 'POST' and selected_dataset:
+        try:
+            # Get strategy parameters
+            strategy_type = request.form.get('strategy_type')
+            initial_capital = float(request.form.get('initial_capital', 10000))
+            commission_rate = float(request.form.get('commission_rate', 0.001))
+            
+            if not strategy_type:
+                flash('Seleziona una strategia da testare.', 'warning')
+                return redirect(url_for('backtest', dataset_id=dataset_id))
+            
+            # Load dataset
+            data = load_dataset(selected_dataset.id)
+            
+            if data is None:
+                flash('Impossibile caricare il dataset. File non trovato.', 'danger')
+                return redirect(url_for('backtest'))
+            
+            # Make sure all required columns are present
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                flash(f'Colonne mancanti nel dataset: {", ".join(missing_columns)}', 'danger')
+                return redirect(url_for('backtest', dataset_id=dataset_id))
+            
+            # Initialize results
+            results = {
+                'initial_capital': initial_capital,
+                'final_capital': 0,
+                'total_return': 0,
+                'annualized_return': 0,
+                'max_drawdown': 0,
+                'win_rate': 0,
+                'profit_factor': 0,
+                'trades': [],
+                'equity_curve': []
+            }
+            
+            # Set up the dataframe for the backtest
+            backtest_data = data.copy()
+            
+            # Add columns for signals, positions, and equity
+            backtest_data['signal'] = 0  # 1 for buy, -1 for sell, 0 for hold
+            backtest_data['position'] = 0  # Current position
+            backtest_data['equity'] = initial_capital  # Equity curve
+            
+            # Implement strategies
+            if strategy_type == 'sma_crossover':
+                # Moving Average Crossover
+                fast_period = int(request.form.get('sma_fast_period', 50))
+                slow_period = int(request.form.get('sma_slow_period', 200))
+                
+                # Calculate moving averages
+                backtest_data[f'SMA_{fast_period}'] = backtest_data['close'].rolling(window=fast_period).mean()
+                backtest_data[f'SMA_{slow_period}'] = backtest_data['close'].rolling(window=slow_period).mean()
+                
+                # Generate signals: 1 when fast crosses above slow, -1 when fast crosses below slow
+                backtest_data['signal'] = 0
+                
+                # Golden Cross (Buy signal)
+                golden_cross = (backtest_data[f'SMA_{fast_period}'] > backtest_data[f'SMA_{slow_period}']) & \
+                               (backtest_data[f'SMA_{fast_period}'].shift(1) <= backtest_data[f'SMA_{slow_period}'].shift(1))
+                
+                # Death Cross (Sell signal)
+                death_cross = (backtest_data[f'SMA_{fast_period}'] < backtest_data[f'SMA_{slow_period}']) & \
+                              (backtest_data[f'SMA_{fast_period}'].shift(1) >= backtest_data[f'SMA_{slow_period}'].shift(1))
+                
+                backtest_data.loc[golden_cross, 'signal'] = 1
+                backtest_data.loc[death_cross, 'signal'] = -1
+                
+                strategy_name = f"SMA Crossover ({fast_period}/{slow_period})"
+                
+            elif strategy_type == 'rsi_strategy':
+                # RSI Strategy
+                rsi_period = int(request.form.get('rsi_period', 14))
+                rsi_overbought = int(request.form.get('rsi_overbought', 70))
+                rsi_oversold = int(request.form.get('rsi_oversold', 30))
+                
+                # Calculate RSI
+                delta = backtest_data['close'].diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
+                
+                avg_gain = gain.rolling(window=rsi_period).mean()
+                avg_loss = loss.rolling(window=rsi_period).mean()
+                
+                rs = avg_gain / avg_loss
+                backtest_data['RSI'] = 100 - (100 / (1 + rs))
+                
+                # Generate signals
+                backtest_data['signal'] = 0
+                
+                # Buy signal: RSI crosses above oversold
+                buy_signal = (backtest_data['RSI'] > rsi_oversold) & (backtest_data['RSI'].shift(1) <= rsi_oversold)
+                
+                # Sell signal: RSI crosses below overbought
+                sell_signal = (backtest_data['RSI'] < rsi_overbought) & (backtest_data['RSI'].shift(1) >= rsi_overbought)
+                
+                backtest_data.loc[buy_signal, 'signal'] = 1
+                backtest_data.loc[sell_signal, 'signal'] = -1
+                
+                strategy_name = f"RSI Strategy (Period: {rsi_period}, Overbought: {rsi_overbought}, Oversold: {rsi_oversold})"
+                
+            elif strategy_type == 'macd_strategy':
+                # MACD Strategy
+                macd_fast = int(request.form.get('macd_fast', 12))
+                macd_slow = int(request.form.get('macd_slow', 26))
+                macd_signal = int(request.form.get('macd_signal', 9))
+                
+                # Calculate MACD
+                backtest_data[f'EMA_{macd_fast}'] = backtest_data['close'].ewm(span=macd_fast, adjust=False).mean()
+                backtest_data[f'EMA_{macd_slow}'] = backtest_data['close'].ewm(span=macd_slow, adjust=False).mean()
+                
+                # MACD Line
+                backtest_data['MACD'] = backtest_data[f'EMA_{macd_fast}'] - backtest_data[f'EMA_{macd_slow}']
+                
+                # Signal Line
+                backtest_data['MACD_Signal'] = backtest_data['MACD'].ewm(span=macd_signal, adjust=False).mean()
+                
+                # Histogram
+                backtest_data['MACD_Hist'] = backtest_data['MACD'] - backtest_data['MACD_Signal']
+                
+                # Generate signals
+                backtest_data['signal'] = 0
+                
+                # Buy signal: MACD crosses above signal line
+                buy_signal = (backtest_data['MACD'] > backtest_data['MACD_Signal']) & \
+                            (backtest_data['MACD'].shift(1) <= backtest_data['MACD_Signal'].shift(1))
+                
+                # Sell signal: MACD crosses below signal line
+                sell_signal = (backtest_data['MACD'] < backtest_data['MACD_Signal']) & \
+                             (backtest_data['MACD'].shift(1) >= backtest_data['MACD_Signal'].shift(1))
+                
+                backtest_data.loc[buy_signal, 'signal'] = 1
+                backtest_data.loc[sell_signal, 'signal'] = -1
+                
+                strategy_name = f"MACD Strategy (Fast: {macd_fast}, Slow: {macd_slow}, Signal: {macd_signal})"
+                
+            elif strategy_type == 'triple_sma':
+                # Triple SMA Strategy (Custom strategy)
+                sma_short = int(request.form.get('sma_short', 5))
+                sma_medium = int(request.form.get('sma_medium', 20))
+                sma_long = int(request.form.get('sma_long', 50))
+                
+                # Calculate SMAs
+                backtest_data[f'SMA_{sma_short}'] = backtest_data['close'].rolling(window=sma_short).mean()
+                backtest_data[f'SMA_{sma_medium}'] = backtest_data['close'].rolling(window=sma_medium).mean()
+                backtest_data[f'SMA_{sma_long}'] = backtest_data['close'].rolling(window=sma_long).mean()
+                
+                # Generate signals
+                backtest_data['signal'] = 0
+                
+                # Buy signal: Short > Medium > Long and previous day was not in this configuration
+                buy_condition = (backtest_data[f'SMA_{sma_short}'] > backtest_data[f'SMA_{sma_medium}']) & \
+                               (backtest_data[f'SMA_{sma_medium}'] > backtest_data[f'SMA_{sma_long}'])
+                
+                buy_signal = buy_condition & (~buy_condition.shift(1).fillna(False))
+                
+                # Sell signal: Short < Medium and previous day Short was > Medium
+                sell_condition = (backtest_data[f'SMA_{sma_short}'] < backtest_data[f'SMA_{sma_medium}'])
+                sell_signal = sell_condition & (~sell_condition.shift(1).fillna(False)) & \
+                             (backtest_data[f'SMA_{sma_short}'].shift(1) > backtest_data[f'SMA_{sma_medium}'].shift(1))
+                
+                backtest_data.loc[buy_signal, 'signal'] = 1
+                backtest_data.loc[sell_signal, 'signal'] = -1
+                
+                strategy_name = f"Triple SMA Strategy (Short: {sma_short}, Medium: {sma_medium}, Long: {sma_long})"
+                
+            else:
+                flash('Strategia non riconosciuta.', 'danger')
+                return redirect(url_for('backtest', dataset_id=dataset_id))
+            
+            # Remove NaN values from the beginning of the dataset due to moving averages
+            backtest_data = backtest_data.dropna()
+            
+            # Run the backtest
+            current_position = 0
+            current_capital = initial_capital
+            trades = []
+            
+            for idx, row in backtest_data.iterrows():
+                # Check for signals
+                if row['signal'] == 1 and current_position == 0:  # Buy signal and no position
+                    # Calculate shares to buy (all in)
+                    price = row['close']
+                    shares = current_capital / price  # All-in approach
+                    cost = shares * price * (1 + commission_rate)  # Include commission
+                    
+                    if cost <= current_capital:
+                        current_position = shares
+                        entry_price = price
+                        entry_date = idx
+                        
+                        # Record trade entry
+                        trades.append({
+                            'type': 'buy',
+                            'date': entry_date.strftime('%Y-%m-%d %H:%M:%S'),
+                            'price': entry_price,
+                            'shares': shares,
+                            'value': shares * entry_price,
+                            'commission': shares * entry_price * commission_rate
+                        })
+                
+                elif (row['signal'] == -1 or idx == backtest_data.index[-1]) and current_position > 0:  # Sell signal or end of data
+                    # Sell position
+                    price = row['close']
+                    shares = current_position
+                    value = shares * price
+                    commission = value * commission_rate
+                    profit = value - (shares * entry_price) - commission - (shares * entry_price * commission_rate)
+                    
+                    current_capital += value - commission
+                    current_position = 0
+                    
+                    # Record trade exit
+                    exit_date = idx
+                    trades.append({
+                        'type': 'sell',
+                        'date': exit_date.strftime('%Y-%m-%d %H:%M:%S'),
+                        'price': price,
+                        'shares': shares,
+                        'value': value,
+                        'commission': commission,
+                        'profit': profit,
+                        'profit_pct': (profit / (shares * entry_price)) * 100
+                    })
+                
+                # Update equity for this row
+                if current_position > 0:
+                    equity = current_capital - (current_position * entry_price * commission_rate) + (current_position * row['close'])
+                else:
+                    equity = current_capital
+                
+                backtest_data.at[idx, 'position'] = current_position
+                backtest_data.at[idx, 'equity'] = equity
+            
+            # Calculate final results
+            final_capital = current_capital if current_position == 0 else current_capital + (current_position * backtest_data['close'].iloc[-1]) - (current_position * backtest_data['close'].iloc[-1] * commission_rate)
+            
+            # Create equity curve
+            equity_curve = backtest_data['equity'].tolist()
+            
+            # Calculate stats
+            total_return = ((final_capital / initial_capital) - 1) * 100
+            
+            # Annualized return
+            start_date = backtest_data.index[0]
+            end_date = backtest_data.index[-1]
+            years = (end_date - start_date).days / 365.25
+            annualized_return = (pow((final_capital / initial_capital), (1 / years)) - 1) * 100 if years > 0 else 0
+            
+            # Maximum drawdown
+            rolling_max = backtest_data['equity'].cummax()
+            drawdowns = (backtest_data['equity'] / rolling_max - 1) * 100
+            max_drawdown = abs(drawdowns.min())
+            
+            # Win rate and profit factor
+            winning_trades = [t for t in trades if t.get('type') == 'sell' and t.get('profit', 0) > 0]
+            losing_trades = [t for t in trades if t.get('type') == 'sell' and t.get('profit', 0) <= 0]
+            
+            total_trades = len(winning_trades) + len(losing_trades)
+            win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
+            
+            gross_profit = sum(t.get('profit', 0) for t in winning_trades)
+            gross_loss = abs(sum(t.get('profit', 0) for t in losing_trades))
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+            
+            # Prepare results
+            results = {
+                'strategy_name': strategy_name,
+                'initial_capital': initial_capital,
+                'final_capital': final_capital,
+                'total_return': total_return,
+                'annualized_return': annualized_return,
+                'max_drawdown': max_drawdown,
+                'win_rate': win_rate,
+                'profit_factor': profit_factor,
+                'total_trades': total_trades,
+                'trades': trades,
+                'equity_curve': equity_curve,
+                'dates': [d.strftime('%Y-%m-%d') for d in backtest_data.index.tolist()]
+            }
+            
+            # Generate performance chart
+            plt.figure(figsize=(12, 8))
+            
+            # Plot equity curve
+            plt.subplot(2, 1, 1)
+            plt.plot(backtest_data.index, backtest_data['equity'], label='Equity')
+            plt.title(f"Performance: {strategy_name}")
+            plt.ylabel('Equity ($)')
+            plt.grid(True, alpha=0.3)
+            plt.legend(loc='upper left')
+            
+            # Plot buy/sell signals
+            plt.subplot(2, 1, 2)
+            plt.plot(backtest_data.index, backtest_data['close'], label='Close Price')
+            
+            # Plot buy signals
+            buy_signals = backtest_data[backtest_data['signal'] == 1]
+            plt.scatter(buy_signals.index, buy_signals['close'], marker='^', color='green', label='Buy Signal', alpha=0.7, s=100)
+            
+            # Plot sell signals
+            sell_signals = backtest_data[backtest_data['signal'] == -1]
+            plt.scatter(sell_signals.index, sell_signals['close'], marker='v', color='red', label='Sell Signal', alpha=0.7, s=100)
+            
+            plt.title(f"{selected_dataset.symbol} - Segnali di Trading")
+            plt.ylabel('Prezzo')
+            plt.grid(True, alpha=0.3)
+            plt.legend(loc='upper left')
+            
+            plt.tight_layout()
+            
+            # Save plot to buffer
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100)
+            buffer.seek(0)
+            
+            # Convert plot to base64 for embedding in HTML
+            chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close()
+            
+            # Save backtest results to session
+            session['backtest_results'] = results
+            session['backtest_chart'] = chart_data
+            
+            # Return results template
+            return render_template('backtest_result.html',
+                                  user_datasets=user_datasets,
+                                  selected_dataset=selected_dataset,
+                                  results=results,
+                                  chart_data=chart_data)
+            
+        except Exception as e:
+            logger.error(f"Errore durante il backtest: {str(e)}")
+            flash(f'Errore durante il backtest: {str(e)}', 'danger')
+            return redirect(url_for('backtest', dataset_id=dataset_id))
+    
+    return render_template('backtest.html',
+                          user_datasets=user_datasets,
+                          selected_dataset=selected_dataset)
 
 @app.route('/models')
 def models():

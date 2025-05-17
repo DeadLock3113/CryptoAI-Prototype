@@ -1,184 +1,295 @@
 {% extends "layout.html" %}
 
-{% block title %}Backtest Strategies{% endblock %}
-
-{% block page_header %}Backtest Trading Strategies{% endblock %}
-
-{% block page_description %}
-Test your trading strategies on historical data with realistic simulations
-{% endblock %}
+{% block title %}Backtest - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Strategy Configuration</h5>
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('backtest') }}" method="post">
-                    <div class="mb-4">
-                        <label for="strategy_type" class="form-label">Select Strategy</label>
-                        <select class="form-select" id="strategy_type" name="strategy_type">
-                            {% for strategy in strategy_options %}
-                            <option value="{{ strategy.id }}">{{ strategy.name }}</option>
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                <h2 class="dashboard-card-title mb-0">Backtest Strategie</h2>
+                
+                {% if user_datasets %}
+                <div class="d-flex">
+                    <form class="d-flex" method="get" action="{{ url_for('backtest') }}">
+                        <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                            <option value="">Seleziona Dataset</option>
+                            {% for dataset in user_datasets %}
+                            <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                {{ dataset.name }} ({{ dataset.symbol }})
+                            </option>
                             {% endfor %}
                         </select>
-                    </div>
-                    
-                    <div id="crossover-params">
-                        <h5 class="mb-3">Moving Average Crossover Parameters</h5>
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <label for="fast_ma" class="form-label">Fast MA Period</label>
-                                <input type="number" class="form-control" id="fast_ma" name="fast_ma" value="20" min="1" max="200">
-                                <div class="form-text">Shorter period moving average</div>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="slow_ma" class="form-label">Slow MA Period</label>
-                                <input type="number" class="form-control" id="slow_ma" name="slow_ma" value="50" min="2" max="500">
-                                <div class="form-text">Longer period moving average</div>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="ma_type" class="form-label">MA Type</label>
-                                <select class="form-select" id="ma_type" name="ma_type">
-                                    <option value="sma">Simple MA (SMA)</option>
-                                    <option value="ema">Exponential MA (EMA)</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <hr class="my-4">
-                    
-                    <h5 class="mb-3">Backtest Settings</h5>
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <label for="initial_capital" class="form-label">Initial Capital ($)</label>
-                            <input type="number" class="form-control" id="initial_capital" name="initial_capital" value="10000" min="100">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="commission" class="form-label">Commission (%)</label>
-                            <input type="number" class="form-control" id="commission" name="commission" value="0.1" min="0" max="10" step="0.01">
-                            <div class="form-text">Enter as percentage (e.g., 0.1 for 0.1%)</div>
-                        </div>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-sync-alt me-2"></i>
-                            Run Backtest
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                        Carica Nuovo
+                    </a>
+                </div>
+                {% endif %}
             </div>
-        </div>
-    </div>
-    
-    <div class="col-lg-4">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>
-                    Strategy Information
-                </h5>
-            </div>
-            <div class="card-body">
-                <div id="strategy-description">
-                    <h5>Moving Average Crossover</h5>
-                    <p>The Moving Average Crossover strategy generates trading signals based on the crossing of a fast moving average and a slow moving average.</p>
-                    
-                    <ul>
-                        <li><strong>Buy Signal:</strong> When the fast MA crosses above the slow MA</li>
-                        <li><strong>Sell Signal:</strong> When the fast MA crosses below the slow MA</li>
-                    </ul>
-                    
-                    <p>This strategy works well in trending markets but may generate false signals in sideways markets.</p>
+            
+            {% if selected_dataset %}
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Backtest per {{ selected_dataset.name }} ({{ selected_dataset.symbol }})</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{{ url_for('backtest', dataset_id=selected_dataset.id) }}">
+                                <input type="hidden" name="dataset_id" value="{{ selected_dataset.id }}">
+                                
+                                <div class="row mb-4">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="initial_capital" class="form-label">Capitale Iniziale ($)</label>
+                                            <input type="number" class="form-control" id="initial_capital" name="initial_capital" value="10000" min="1" step="1000" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="commission_rate" class="form-label">Commissione (in %)</label>
+                                            <input type="number" class="form-control" id="commission_rate" name="commission_rate" value="0.1" min="0" max="5" step="0.01" required>
+                                            <div class="form-text">Percentuale applicata a ogni operazione (es. 0.1% = 0.001)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-4">
+                                    <label class="form-label">Seleziona Strategia</label>
+                                    <div class="row">
+                                        <div class="col-lg-3 col-md-6 mb-3">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="strategy_type" id="sma_crossover" value="sma_crossover" onchange="showStrategyOptions(this.value)">
+                                                        <label class="form-check-label" for="sma_crossover">
+                                                            <strong>SMA Crossover</strong>
+                                                        </label>
+                                                    </div>
+                                                    <p class="small mt-2">
+                                                        Trading basato sull'incrocio di due medie mobili semplici.
+                                                        Buy: SMA veloce incrocia SMA lenta dal basso.
+                                                        Sell: SMA veloce incrocia SMA lenta dall'alto.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-lg-3 col-md-6 mb-3">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="strategy_type" id="rsi_strategy" value="rsi_strategy" onchange="showStrategyOptions(this.value)">
+                                                        <label class="form-check-label" for="rsi_strategy">
+                                                            <strong>RSI Strategy</strong>
+                                                        </label>
+                                                    </div>
+                                                    <p class="small mt-2">
+                                                        Trading basato sull'indicatore RSI.
+                                                        Buy: RSI esce da zona di ipervenduto.
+                                                        Sell: RSI entra in zona di ipercomprato.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-lg-3 col-md-6 mb-3">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="strategy_type" id="macd_strategy" value="macd_strategy" onchange="showStrategyOptions(this.value)">
+                                                        <label class="form-check-label" for="macd_strategy">
+                                                            <strong>MACD Strategy</strong>
+                                                        </label>
+                                                    </div>
+                                                    <p class="small mt-2">
+                                                        Trading basato sull'indicatore MACD.
+                                                        Buy: MACD line incrocia Signal line dal basso.
+                                                        Sell: MACD line incrocia Signal line dall'alto.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-lg-3 col-md-6 mb-3">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="strategy_type" id="triple_sma" value="triple_sma" onchange="showStrategyOptions(this.value)">
+                                                        <label class="form-check-label" for="triple_sma">
+                                                            <strong>Triple SMA Strategy</strong>
+                                                        </label>
+                                                    </div>
+                                                    <p class="small mt-2">
+                                                        Trading basato su tre medie mobili (corta, media, lunga).
+                                                        Buy: SMA corta > SMA media > SMA lunga (allineamento rialzista).
+                                                        Sell: SMA corta incrocia SMA media dall'alto.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Strategy Options - SMA Crossover -->
+                                <div id="options_sma_crossover" class="strategy-options" style="display: none;">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <h6 class="card-title mb-0">Parametri SMA Crossover</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <div class="mb-3">
+                                                        <label for="sma_fast_period" class="form-label">SMA Periodo Veloce</label>
+                                                        <input type="number" class="form-control" id="sma_fast_period" name="sma_fast_period" value="50" min="2" max="100" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="mb-3">
+                                                        <label for="sma_slow_period" class="form-label">SMA Periodo Lento</label>
+                                                        <input type="number" class="form-control" id="sma_slow_period" name="sma_slow_period" value="200" min="10" max="500" step="1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Strategy Options - RSI Strategy -->
+                                <div id="options_rsi_strategy" class="strategy-options" style="display: none;">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <h6 class="card-title mb-0">Parametri RSI Strategy</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="rsi_period" class="form-label">Periodo RSI</label>
+                                                        <input type="number" class="form-control" id="rsi_period" name="rsi_period" value="14" min="2" max="30" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="rsi_overbought" class="form-label">Livello ipercomprato</label>
+                                                        <input type="number" class="form-control" id="rsi_overbought" name="rsi_overbought" value="70" min="50" max="90" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="rsi_oversold" class="form-label">Livello ipervenduto</label>
+                                                        <input type="number" class="form-control" id="rsi_oversold" name="rsi_oversold" value="30" min="10" max="50" step="1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Strategy Options - MACD Strategy -->
+                                <div id="options_macd_strategy" class="strategy-options" style="display: none;">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <h6 class="card-title mb-0">Parametri MACD Strategy</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="macd_fast" class="form-label">Periodo veloce</label>
+                                                        <input type="number" class="form-control" id="macd_fast" name="macd_fast" value="12" min="2" max="30" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="macd_slow" class="form-label">Periodo lento</label>
+                                                        <input type="number" class="form-control" id="macd_slow" name="macd_slow" value="26" min="10" max="50" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="macd_signal" class="form-label">Periodo signal</label>
+                                                        <input type="number" class="form-control" id="macd_signal" name="macd_signal" value="9" min="2" max="20" step="1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Strategy Options - Triple SMA -->
+                                <div id="options_triple_sma" class="strategy-options" style="display: none;">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <h6 class="card-title mb-0">Parametri Triple SMA Strategy</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="sma_short" class="form-label">SMA periodo corto</label>
+                                                        <input type="number" class="form-control" id="sma_short" name="sma_short" value="5" min="2" max="20" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="sma_medium" class="form-label">SMA periodo medio</label>
+                                                        <input type="number" class="form-control" id="sma_medium" name="sma_medium" value="20" min="10" max="50" step="1">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="mb-3">
+                                                        <label for="sma_long" class="form-label">SMA periodo lungo</label>
+                                                        <input type="number" class="form-control" id="sma_long" name="sma_long" value="50" min="30" max="200" step="1">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 mt-4">
+                                    <button type="submit" class="btn btn-primary">Esegui Backtest</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0">
-                    <i class="fas fa-lightbulb me-2"></i>
-                    Backtesting Tips
-                </h5>
+            {% else %}
+            <div class="alert alert-info mt-3">
+                <p>Seleziona un dataset per eseguire un backtest o <a href="{{ url_for('upload') }}">carica un nuovo dataset</a>.</p>
             </div>
-            <div class="card-body">
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item">
-                        <i class="fas fa-check text-success me-2"></i>
-                        Use realistic commission rates
-                    </li>
-                    <li class="list-group-item">
-                        <i class="fas fa-check text-success me-2"></i>
-                        Test strategies over different market conditions (bull, bear, sideways)
-                    </li>
-                    <li class="list-group-item">
-                        <i class="fas fa-check text-success me-2"></i>
-                        Compare results to a buy-and-hold baseline
-                    </li>
-                    <li class="list-group-item">
-                        <i class="fas fa-check text-success me-2"></i>
-                        Examine risk-adjusted metrics (Sharpe, Sortino) not just returns
-                    </li>
-                </ul>
-            </div>
+            {% endif %}
         </div>
-        
-        {% if has_indicators %}
-        <div class="alert alert-success">
-            <i class="fas fa-check-circle me-2"></i>
-            <strong>Technical indicators are available</strong> and will be used in the backtest.
-        </div>
-        {% else %}
-        <div class="alert alert-warning">
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            <strong>No technical indicators have been calculated.</strong> Basic indicators will be calculated automatically.
-            <div class="mt-2">
-                <a href="{{ url_for('indicators') }}" class="btn btn-sm btn-primary">
-                    Calculate Indicators
-                </a>
-            </div>
-        </div>
-        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const strategySelect = document.getElementById('strategy_type');
-        const strategyDescription = document.getElementById('strategy-description');
-        const crossoverParams = document.getElementById('crossover-params');
-        
-        strategySelect.addEventListener('change', function() {
-            const strategy = strategySelect.value;
-            
-            // Show/hide strategy-specific parameters
-            if (strategy === 'crossover') {
-                crossoverParams.style.display = 'block';
-                strategyDescription.innerHTML = `
-                    <h5>Moving Average Crossover</h5>
-                    <p>The Moving Average Crossover strategy generates trading signals based on the crossing of a fast moving average and a slow moving average.</p>
-                    
-                    <ul>
-                        <li><strong>Buy Signal:</strong> When the fast MA crosses above the slow MA</li>
-                        <li><strong>Sell Signal:</strong> When the fast MA crosses below the slow MA</li>
-                    </ul>
-                    
-                    <p>This strategy works well in trending markets but may generate false signals in sideways markets.</p>
-                `;
-            } else {
-                // For future strategies
-                crossoverParams.style.display = 'none';
-            }
+    // Function to show strategy options based on selection
+    function showStrategyOptions(strategyType) {
+        // Hide all strategy options
+        document.querySelectorAll('.strategy-options').forEach(element => {
+            element.style.display = 'none';
         });
         
-        // Set initial state
-        strategySelect.dispatchEvent(new Event('change'));
+        // Show selected strategy options
+        const optionsElement = document.getElementById('options_' + strategyType);
+        if (optionsElement) {
+            optionsElement.style.display = 'block';
+        }
+    }
+    
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkedRadio = document.querySelector('input[name="strategy_type"]:checked');
+        if (checkedRadio) {
+            showStrategyOptions(checkedRadio.value);
+        }
     });
 </script>
 {% endblock %}

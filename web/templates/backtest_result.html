@@ -1,172 +1,182 @@
 {% extends "layout.html" %}
 
-{% block title %}Backtest Results{% endblock %}
-
-{% block page_header %}Backtest Results: {{ strategy }}{% endblock %}
-
-{% block page_description %}
-Analysis of your trading strategy's performance on historical data
-{% endblock %}
+{% block title %}Risultati Backtest - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
-    <div class="col-md-8">
-        <div class="card shadow-sm">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">Performance Summary</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-4 mb-3">
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <h6 class="text-muted">Initial Capital</h6>
-                                <h3>${{ results.initial_capital|round(2) }}</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <h6 class="text-muted">Final Equity</h6>
-                                <h3>${{ results.final_equity|round(2) }}</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <h6 class="text-muted">Total Return</h6>
-                                <h3 class="{% if results.return_pct > 0 %}text-success{% elif results.return_pct < 0 %}text-danger{% endif %}">
-                                    {{ results.return_pct|round(2) }}%
-                                </h3>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+    <div class="col-md-12">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                <h2 class="dashboard-card-title mb-0">Risultati Backtest</h2>
                 
-                <div class="table-responsive mt-3">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Metric</th>
-                                <th>Value</th>
-                                <th>Metric</th>
-                                <th>Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for i in range(0, performance|length, 2) %}
-                            <tr>
-                                <td><strong>{{ performance[i].Metric }}</strong></td>
-                                <td>{{ performance[i].Value }}</td>
-                                {% if i+1 < performance|length %}
-                                <td><strong>{{ performance[i+1].Metric }}</strong></td>
-                                <td>{{ performance[i+1].Value }}</td>
-                                {% else %}
-                                <td></td>
-                                <td></td>
-                                {% endif %}
-                            </tr>
+                {% if user_datasets %}
+                <div class="d-flex">
+                    <form class="d-flex" method="get" action="{{ url_for('backtest') }}">
+                        <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                            <option value="">Seleziona Dataset</option>
+                            {% for dataset in user_datasets %}
+                            <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                {{ dataset.name }} ({{ dataset.symbol }})
+                            </option>
                             {% endfor %}
-                        </tbody>
-                    </table>
+                        </select>
+                    </form>
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                        Carica Nuovo
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if selected_dataset and results %}
+            <div class="row mt-4">
+                <div class="col-md-12 mb-4">
+                    <div class="alert alert-success">
+                        <h5>Backtest completato con successo per {{ selected_dataset.name }} ({{ selected_dataset.symbol }})</h5>
+                        <p class="mb-0">
+                            <strong>Strategia:</strong> {{ results.strategy_name }}
+                        </p>
+                    </div>
                 </div>
                 
-                <div class="d-flex justify-content-between mt-3">
-                    <a href="{{ url_for('backtest') }}" class="btn btn-primary">
-                        <i class="fas fa-redo me-2"></i>
-                        Run Another Backtest
-                    </a>
-                    <a href="{{ url_for('download_results') }}" class="btn btn-secondary">
-                        <i class="fas fa-download me-2"></i>
-                        Download Results
-                    </a>
+                <div class="col-md-12">
+                    <div class="chart-container">
+                        <h4 class="mb-3">Performance</h4>
+                        <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid" alt="Performance Chart">
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Strategy Settings</h5>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <tbody>
-                        <tr>
-                            <th>Strategy:</th>
-                            <td>{{ strategy }}</td>
-                        </tr>
-                        <tr>
-                            <th>Initial Capital:</th>
-                            <td>${{ results.initial_capital }}</td>
-                        </tr>
-                        <tr>
-                            <th>Commission:</th>
-                            <td>{{ results.commission * 100 }}%</td>
-                        </tr>
-                        <tr>
-                            <th>Number of Trades:</th>
-                            <td>{{ results.num_trades }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<h3 class="mb-4">Performance Charts</h3>
-
-<div class="row mb-4">
-    {% for plot_file in plot_files %}
-    <div class="col-md-6 mb-4">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <img src="{{ url_for('static', filename=plot_file) }}" class="img-fluid rounded" alt="Performance Chart">
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-info text-white">
-        <h5 class="mb-0">Analysis & Insights</h5>
-    </div>
-    <div class="card-body">
-        <div class="alert alert-primary">
-            <i class="fas fa-info-circle me-2"></i>
-            <strong>Strategy Performance Analysis</strong>
             
-            <p class="mt-2 mb-0">
-                {% if results.return_pct > 15 %}
-                This strategy has performed exceptionally well, with a return of {{ results.return_pct|round(2) }}%. Consider examining the risk-adjusted metrics to ensure this performance is sustainable and not due to excessive risk-taking.
-                {% elif results.return_pct > 0 %}
-                The strategy has generated a positive return of {{ results.return_pct|round(2) }}%. Compare the Sharpe and Sortino ratios to assess the risk-adjusted performance relative to simpler strategies.
-                {% else %}
-                The strategy has not performed well in this backtest, with a negative return of {{ results.return_pct|round(2) }}%. Consider adjusting parameters or testing different strategies for this market condition.
-                {% endif %}
-            </p>
-        </div>
-        
-        <div class="mt-3">
-            <h6>Next Steps:</h6>
-            <ul>
-                <li>Examine the equity curve and drawdowns to assess risk</li>
-                <li>Compare strategy performance in different market conditions</li>
-                <li>Consider optimizing strategy parameters</li>
-                <li>Try adding machine learning predictions to enhance the strategy</li>
-            </ul>
-            
-            <div class="mt-3">
-                <a href="{{ url_for('models') }}" class="btn btn-info">
-                    <i class="fas fa-brain me-2"></i>
-                    Enhance with ML Models
-                </a>
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Metriche di Performance</h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-striped">
+                                <tr>
+                                    <th>Capitale Iniziale:</th>
+                                    <td>${{ "%.2f"|format(results.initial_capital) }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Capitale Finale:</th>
+                                    <td>${{ "%.2f"|format(results.final_capital) }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Rendimento Totale:</th>
+                                    <td class="{% if results.total_return > 0 %}text-success{% elif results.total_return < 0 %}text-danger{% endif %}">
+                                        {{ "%.2f"|format(results.total_return) }}%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Rendimento Annualizzato:</th>
+                                    <td class="{% if results.annualized_return > 0 %}text-success{% elif results.annualized_return < 0 %}text-danger{% endif %}">
+                                        {{ "%.2f"|format(results.annualized_return) }}%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Drawdown Massimo:</th>
+                                    <td class="text-danger">{{ "%.2f"|format(results.max_drawdown) }}%</td>
+                                </tr>
+                                <tr>
+                                    <th>Win Rate:</th>
+                                    <td>{{ "%.2f"|format(results.win_rate) }}%</td>
+                                </tr>
+                                <tr>
+                                    <th>Profit Factor:</th>
+                                    <td>{{ "%.2f"|format(results.profit_factor) }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Numero Totale Operazioni:</th>
+                                    <td>{{ results.total_trades }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Operazioni</h5>
+                        </div>
+                        <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-striped table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo</th>
+                                        <th>Data</th>
+                                        <th>Prezzo</th>
+                                        <th>Quantità</th>
+                                        <th>Valore</th>
+                                        {% if results.trades and 'profit' in results.trades[0] %}
+                                        <th>Profitto</th>
+                                        {% endif %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for trade in results.trades %}
+                                    <tr>
+                                        <td>
+                                            {% if trade.type == 'buy' %}
+                                            <span class="badge bg-success">Acquisto</span>
+                                            {% else %}
+                                            <span class="badge bg-danger">Vendita</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ trade.date }}</td>
+                                        <td>${{ "%.2f"|format(trade.price) }}</td>
+                                        <td>{{ "%.4f"|format(trade.shares) }}</td>
+                                        <td>${{ "%.2f"|format(trade.value) }}</td>
+                                        {% if 'profit' in trade %}
+                                        <td class="{% if trade.profit > 0 %}text-success{% elif trade.profit < 0 %}text-danger{% endif %}">
+                                            ${{ "%.2f"|format(trade.profit) }}
+                                            ({{ "%.2f"|format(trade.profit_pct) }}%)
+                                        </td>
+                                        {% endif %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Azioni</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('backtest') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-primary d-block mb-2">
+                                        Modifica Strategia
+                                    </a>
+                                </div>
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('indicators') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-success d-block mb-2">
+                                        Visualizza Indicatori
+                                    </a>
+                                </div>
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('analysis') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-info d-block mb-2">
+                                        Torna all'Analisi
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info mt-3">
+                <p>Nessun dataset selezionato o nessun risultato di backtest disponibile. <a href="{{ url_for('backtest') }}">Esegui un nuovo backtest</a>.</p>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -1,62 +1,86 @@
 {% extends "layout.html" %}
 
-{% block title %}Indicator Results{% endblock %}
-
-{% block page_header %}Technical Indicator Results{% endblock %}
-
-{% block page_description %}
-Visualization of calculated technical indicators for your cryptocurrency data
-{% endblock %}
+{% block title %}Risultati Indicatori - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">Calculated Indicators</h5>
-    </div>
-    <div class="card-body">
-        <div class="mb-4">
-            <h6>Applied Indicators:</h6>
-            <div class="d-flex flex-wrap">
-                {% for indicator in selected_indicators %}
-                <span class="badge bg-success me-2 mb-2 py-2 px-3">{{ indicator }}</span>
-                {% endfor %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                <h2 class="dashboard-card-title mb-0">Risultati Indicatori</h2>
+                
+                {% if user_datasets %}
+                <div class="d-flex">
+                    <form class="d-flex" method="get" action="{{ url_for('indicators') }}">
+                        <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                            <option value="">Seleziona Dataset</option>
+                            {% for dataset in user_datasets %}
+                            <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                {{ dataset.name }} ({{ dataset.symbol }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                        Carica Nuovo
+                    </a>
+                </div>
+                {% endif %}
             </div>
-        </div>
-        
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i>
-            Technical indicators have been calculated and stored. You can now use them for backtesting or machine learning models.
-        </div>
-        
-        <div class="d-flex justify-content-between mb-4">
-            <a href="{{ url_for('backtest') }}" class="btn btn-success">
-                <i class="fas fa-sync-alt me-2"></i>
-                Run Backtest with Indicators
-            </a>
-            <a href="{{ url_for('models') }}" class="btn btn-info">
-                <i class="fas fa-brain me-2"></i>
-                Train ML Models with Indicators
-            </a>
+            
+            {% if selected_dataset %}
+            <div class="row mt-4">
+                <div class="col-md-12 mb-4">
+                    <div class="alert alert-success">
+                        <h5>Indicatori calcolati con successo per {{ selected_dataset.name }} ({{ selected_dataset.symbol }})</h5>
+                        <p class="mb-0">
+                            <strong>Indicatori:</strong> {{ ", ".join(calculated) }}
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="col-md-12">
+                    <div class="chart-container">
+                        <h4 class="mb-3">Grafico con Indicatori</h4>
+                        <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid" alt="Grafico con Indicatori">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Azioni</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('indicators') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-primary d-block mb-2">
+                                        Calcola Altri Indicatori
+                                    </a>
+                                </div>
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('backtest') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-success d-block mb-2">
+                                        Esegui Backtest
+                                    </a>
+                                </div>
+                                <div class="col-md-4">
+                                    <a href="{{ url_for('analysis') }}?dataset_id={{ selected_dataset.id }}" class="btn btn-info d-block mb-2">
+                                        Torna all'Analisi
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info mt-3">
+                <p>Nessun dataset selezionato o disponibile. <a href="{{ url_for('upload') }}">Carica un nuovo dataset</a> per iniziare l'analisi.</p>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
-
-{% if indicator_plots %}
-<h3 class="mb-4">Indicator Visualizations</h3>
-
-{% for plot in indicator_plots %}
-<div class="card shadow-sm mb-4">
-    <div class="card-header">
-        <h5 class="mb-0">{{ plot.name }}</h5>
-    </div>
-    <div class="card-body">
-        <p class="mb-4">{{ plot.description }}</p>
-        <div class="text-center">
-            <img src="data:image/png;base64,{{ plot.img }}" class="img-fluid rounded" alt="{{ plot.name }}">
-        </div>
-    </div>
-</div>
-{% endfor %}
-{% endif %}
-
 {% endblock %}

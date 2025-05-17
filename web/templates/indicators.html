@@ -1,269 +1,233 @@
 {% extends "layout.html" %}
 
-{% block title %}Indicatori Tecnici{% endblock %}
-
-{% block page_header %}Indicatori Tecnici{% endblock %}
-
-{% block page_description %}
-Calcola e visualizza indicatori tecnici avanzati per le tue criptovalute
-{% endblock %}
+{% block title %}Indicatori Tecnici - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
-<div class="card shadow-sm mb-4">
-    <div class="card-body">
-        <h2 class="card-title">Analisi Tecnica con Indicatori Avanzati</h2>
-        <p class="card-text">
-            Gli indicatori tecnici sono strumenti matematici che analizzano i dati storici dei prezzi per individuare
-            tendenze, punti di inversione e opportunità di trading. CryptoTradeAnalyzer offre una vasta gamma di
-            indicatori per l'analisi dei mercati delle criptovalute.
-        </p>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-lg-4">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Seleziona Dataset</h5>
-            </div>
-            <div class="card-body">
-                <p>Seleziona un dataset su cui calcolare gli indicatori tecnici.</p>
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header d-flex justify-content-between align-items-center">
+                <h2 class="dashboard-card-title mb-0">Indicatori Tecnici</h2>
                 
-                <form method="GET" id="datasetForm">
-                    <div class="mb-3">
-                        <label for="dataset_select" class="form-label">Dataset</label>
-                        <select class="form-select" id="dataset_select" name="dataset_id" onchange="this.form.submit()">
-                            <option>Seleziona un dataset</option>
-                            {% if user_datasets %}
-                                {% for dataset in user_datasets %}
-                                <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
-                                    {{ dataset.name }} ({{ dataset.symbol }})
-                                </option>
-                                {% endfor %}
-                            {% endif %}
+                {% if user_datasets %}
+                <div class="d-flex">
+                    <form class="d-flex" method="get" action="{{ url_for('indicators') }}">
+                        <select class="form-select me-2" name="dataset_id" id="dataset-selector" onchange="this.form.submit()">
+                            <option value="">Seleziona Dataset</option>
+                            {% for dataset in user_datasets %}
+                            <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                {{ dataset.name }} ({{ dataset.symbol }})
+                            </option>
+                            {% endfor %}
                         </select>
-                    </div>
-                </form>
-                
-                <div class="mt-3">
-                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm w-100">
-                        <i class="fas fa-upload me-2"></i> Carica Nuovo Dataset
+                    </form>
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
+                        Carica Nuovo
                     </a>
                 </div>
+                {% endif %}
             </div>
-        </div>
-        
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Configura Indicatori</h5>
-            </div>
-            <div class="card-body">
-                <form id="indicatorForm">
-                    <h6 class="mb-3">Indicatori di Trend</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="maCheck" name="indicators" value="ma">
-                        <label class="form-check-label" for="maCheck">
-                            Media Mobile (MA)
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="maConfig">
-                            <div class="mb-2">
-                                <label class="form-label small">Periodo</label>
-                                <input type="number" class="form-control form-control-sm" name="ma_period" value="20">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label small">Tipo</label>
-                                <select class="form-select form-select-sm" name="ma_type">
-                                    <option value="simple">Simple</option>
-                                    <option value="exponential">Exponential</option>
-                                    <option value="weighted">Weighted</option>
-                                </select>
-                            </div>
+            
+            {% if selected_dataset %}
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Calcola Indicatori per {{ selected_dataset.name }} ({{ selected_dataset.symbol }})</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{{ url_for('indicators', dataset_id=selected_dataset.id) }}">
+                                <input type="hidden" name="dataset_id" value="{{ selected_dataset.id }}">
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="card mb-3">
+                                            <div class="card-header">
+                                                <h6 class="card-title mb-0">Indicatori di Trend</h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="sma" name="indicators" value="sma">
+                                                        <label class="form-check-label" for="sma">
+                                                            SMA (Simple Moving Average)
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 mb-2">
+                                                        <label for="sma_period" class="form-label">Periodo SMA</label>
+                                                        <select class="form-select form-select-sm" id="sma_period" name="sma_period">
+                                                            <option value="5">5</option>
+                                                            <option value="10">10</option>
+                                                            <option value="20" selected>20</option>
+                                                            <option value="50">50</option>
+                                                            <option value="100">100</option>
+                                                            <option value="200">200</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="ema" name="indicators" value="ema">
+                                                        <label class="form-check-label" for="ema">
+                                                            EMA (Exponential Moving Average)
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 mb-2">
+                                                        <label for="ema_period" class="form-label">Periodo EMA</label>
+                                                        <select class="form-select form-select-sm" id="ema_period" name="ema_period">
+                                                            <option value="5">5</option>
+                                                            <option value="10">10</option>
+                                                            <option value="20" selected>20</option>
+                                                            <option value="50">50</option>
+                                                            <option value="100">100</option>
+                                                            <option value="200">200</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="macd" name="indicators" value="macd">
+                                                        <label class="form-check-label" for="macd">
+                                                            MACD (Moving Average Convergence Divergence)
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 row">
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="macd_fast" class="form-label">Periodo Veloce</label>
+                                                            <select class="form-select form-select-sm" id="macd_fast" name="macd_fast">
+                                                                <option value="8">8</option>
+                                                                <option value="12" selected>12</option>
+                                                                <option value="16">16</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="macd_slow" class="form-label">Periodo Lento</label>
+                                                            <select class="form-select form-select-sm" id="macd_slow" name="macd_slow">
+                                                                <option value="21">21</option>
+                                                                <option value="26" selected>26</option>
+                                                                <option value="30">30</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="macd_signal" class="form-label">Segnale</label>
+                                                            <select class="form-select form-select-sm" id="macd_signal" name="macd_signal">
+                                                                <option value="7">7</option>
+                                                                <option value="9" selected>9</option>
+                                                                <option value="12">12</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-6">
+                                        <div class="card mb-3">
+                                            <div class="card-header">
+                                                <h6 class="card-title mb-0">Indicatori di Momentum e Volatilità</h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="rsi" name="indicators" value="rsi">
+                                                        <label class="form-check-label" for="rsi">
+                                                            RSI (Relative Strength Index)
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 mb-2">
+                                                        <label for="rsi_period" class="form-label">Periodo RSI</label>
+                                                        <select class="form-select form-select-sm" id="rsi_period" name="rsi_period">
+                                                            <option value="7">7</option>
+                                                            <option value="14" selected>14</option>
+                                                            <option value="21">21</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="bb" name="indicators" value="bb">
+                                                        <label class="form-check-label" for="bb">
+                                                            Bollinger Bands
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 row">
+                                                        <div class="col-md-6 mb-2">
+                                                            <label for="bb_period" class="form-label">Periodo</label>
+                                                            <select class="form-select form-select-sm" id="bb_period" name="bb_period">
+                                                                <option value="10">10</option>
+                                                                <option value="20" selected>20</option>
+                                                                <option value="30">30</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 mb-2">
+                                                            <label for="bb_stddev" class="form-label">Deviazioni Standard</label>
+                                                            <select class="form-select form-select-sm" id="bb_stddev" name="bb_stddev">
+                                                                <option value="1.5">1.5</option>
+                                                                <option value="2" selected>2.0</option>
+                                                                <option value="2.5">2.5</option>
+                                                                <option value="3">3.0</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="stoch" name="indicators" value="stoch">
+                                                        <label class="form-check-label" for="stoch">
+                                                            Stocastico
+                                                        </label>
+                                                    </div>
+                                                    <div class="ms-4 row">
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="stoch_k" class="form-label">K</label>
+                                                            <select class="form-select form-select-sm" id="stoch_k" name="stoch_k">
+                                                                <option value="5">5</option>
+                                                                <option value="9">9</option>
+                                                                <option value="14" selected>14</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="stoch_d" class="form-label">D</label>
+                                                            <select class="form-select form-select-sm" id="stoch_d" name="stoch_d">
+                                                                <option value="3" selected>3</option>
+                                                                <option value="5">5</option>
+                                                                <option value="9">9</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-4 mb-2">
+                                                            <label for="stoch_smooth" class="form-label">Smooth</label>
+                                                            <select class="form-select form-select-sm" id="stoch_smooth" name="stoch_smooth">
+                                                                <option value="1">1</option>
+                                                                <option value="3" selected>3</option>
+                                                                <option value="5">5</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 mt-3">
+                                    <button type="submit" class="btn btn-primary">Calcola Indicatori</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="macdCheck" name="indicators" value="macd">
-                        <label class="form-check-label" for="macdCheck">
-                            MACD
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="macdConfig">
-                            <div class="row g-2">
-                                <div class="col-4">
-                                    <label class="form-label small">Fast</label>
-                                    <input type="number" class="form-control form-control-sm" name="macd_fast" value="12">
-                                </div>
-                                <div class="col-4">
-                                    <label class="form-label small">Slow</label>
-                                    <input type="number" class="form-control form-control-sm" name="macd_slow" value="26">
-                                </div>
-                                <div class="col-4">
-                                    <label class="form-label small">Signal</label>
-                                    <input type="number" class="form-control form-control-sm" name="macd_signal" value="9">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <h6 class="mb-3 mt-4">Oscillatori</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="rsiCheck" name="indicators" value="rsi">
-                        <label class="form-check-label" for="rsiCheck">
-                            RSI
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="rsiConfig">
-                            <div class="mb-2">
-                                <label class="form-label small">Periodo</label>
-                                <input type="number" class="form-control form-control-sm" name="rsi_period" value="14">
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label small">Ipercomprato</label>
-                                    <input type="number" class="form-control form-control-sm" name="rsi_overbought" value="70">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label small">Ipervenduto</label>
-                                    <input type="number" class="form-control form-control-sm" name="rsi_oversold" value="30">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="stochCheck" name="indicators" value="stoch">
-                        <label class="form-check-label" for="stochCheck">
-                            Stocastico
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="stochConfig">
-                            <div class="row g-2">
-                                <div class="col-4">
-                                    <label class="form-label small">K</label>
-                                    <input type="number" class="form-control form-control-sm" name="stoch_k" value="14">
-                                </div>
-                                <div class="col-4">
-                                    <label class="form-label small">D</label>
-                                    <input type="number" class="form-control form-control-sm" name="stoch_d" value="3">
-                                </div>
-                                <div class="col-4">
-                                    <label class="form-label small">Slow</label>
-                                    <input type="number" class="form-control form-control-sm" name="stoch_slow" value="3">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <h6 class="mb-3 mt-4">Volatilità</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="bbCheck" name="indicators" value="bb">
-                        <label class="form-check-label" for="bbCheck">
-                            Bollinger Bands
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="bbConfig">
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label small">Periodo</label>
-                                    <input type="number" class="form-control form-control-sm" name="bb_period" value="20">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label small">Dev. Standard</label>
-                                    <input type="number" class="form-control form-control-sm" name="bb_std" value="2" step="0.1">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="atrCheck" name="indicators" value="atr">
-                        <label class="form-check-label" for="atrCheck">
-                            ATR
-                        </label>
-                        <div class="ms-4 mt-1 collapse" id="atrConfig">
-                            <div class="mb-2">
-                                <label class="form-label small">Periodo</label>
-                                <input type="number" class="form-control form-control-sm" name="atr_period" value="14">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="d-grid mt-4">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-calculator me-2"></i>
-                            Calcola Indicatori
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-lg-8">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Grafico Indicatori</h5>
-            </div>
-            <div class="card-body">
-                <div class="text-center py-5">
-                    <i class="fas fa-chart-line fa-4x mb-3 text-muted"></i>
-                    <h4 class="text-muted">Seleziona un dataset e calcola gli indicatori</h4>
-                    <p class="text-muted">
-                        Il grafico degli indicatori apparirà qui dopo aver selezionato un dataset e 
-                        calcolato gli indicatori.
-                    </p>
                 </div>
             </div>
-        </div>
-        
-        <div class="card shadow-sm">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">Segnali di Trading</h5>
+            {% else %}
+            <div class="alert alert-info mt-3">
+                <p>Seleziona un dataset per calcolare gli indicatori tecnici o <a href="{{ url_for('upload') }}">carica un nuovo dataset</a>.</p>
             </div>
-            <div class="card-body">
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    Seleziona un dataset e calcola gli indicatori per visualizzare i segnali di trading.
-                </div>
-                
-                <div class="table-responsive d-none">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Indicatore</th>
-                                <th>Valore</th>
-                                <th>Segnale</th>
-                                <th>Forza</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- I segnali verranno inseriti qui dinamicamente -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            {% endif %}
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Toggle indicator config sections when checkboxes are clicked
-        document.querySelectorAll('input[name="indicators"]').forEach(function(checkbox) {
-            checkbox.addEventListener('change', function() {
-                const configId = this.id.replace('Check', 'Config');
-                const configElement = document.getElementById(configId);
-                
-                if (this.checked) {
-                    $(configElement).collapse('show');
-                } else {
-                    $(configElement).collapse('hide');
-                }
-            });
-        });
-        
-        // Handle form submission (to be implemented)
-        document.getElementById('indicatorForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // Simulazione dell'invio del form e calcolo degli indicatori
-            alert('Funzionalità in fase di implementazione. Questa è solo una dimostrazione dell\'interfaccia.');
-        });
-    });
-</script>
 {% endblock %}
