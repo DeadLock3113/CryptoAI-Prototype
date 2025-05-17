@@ -16,8 +16,8 @@ import sys
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Import the app
-from app import app
+# Import the app from simple_app
+from simple_app import app
 
-# This is now a simple entry point that uses our app.py Flask application
+# This is now a simple entry point that uses our simple_app.py Flask application
 # The application will be run by gunicorn in the workflow.
