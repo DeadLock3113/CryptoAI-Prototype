@@ -27,7 +27,76 @@
                         <label for="confirm_password" class="form-label">Conferma Password</label>
                         <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
                     </div>
-                    <div class="d-grid gap-2">
+                    
+                    <h5 class="mt-4 mb-3">Configurazione Exchange (Opzionale)</h5>
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">
+                                <img src="https://cryptologos.cc/logos/binance-coin-bnb-logo.svg" alt="Binance" style="height: 20px; width: auto;" class="me-2">
+                                Binance
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label for="binance_api_key" class="form-label">API Key</label>
+                                    <input type="password" class="form-control" id="binance_api_key" name="binance_api_key">
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label for="binance_api_secret" class="form-label">API Secret</label>
+                                    <input type="password" class="form-control" id="binance_api_secret" name="binance_api_secret">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">
+                                <img src="https://cryptologos.cc/logos/kraken-krak-logo.svg" alt="Kraken" style="height: 20px; width: auto;" class="me-2">
+                                Kraken
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label for="kraken_api_key" class="form-label">API Key</label>
+                                    <input type="password" class="form-control" id="kraken_api_key" name="kraken_api_key">
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label for="kraken_api_secret" class="form-label">API Secret</label>
+                                    <input type="password" class="form-control" id="kraken_api_secret" name="kraken_api_secret">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 class="mt-4 mb-3">Notifiche Telegram (Opzionale)</h5>
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">
+                                <i class="fab fa-telegram text-primary me-2"></i>
+                                Configurazione Telegram
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label for="telegram_bot_token" class="form-label">Bot Token</label>
+                                    <input type="password" class="form-control" id="telegram_bot_token" name="telegram_bot_token">
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label for="telegram_chat_id" class="form-label">Chat ID</label>
+                                    <input type="text" class="form-control" id="telegram_chat_id" name="telegram_chat_id">
+                                </div>
+                            </div>
+                            <div class="form-text">
+                                <small>Queste informazioni vengono utilizzate per inviarti notifiche sui prezzi delle criptovalute.</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-user-plus me-2"></i>
                             Registrati

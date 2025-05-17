@@ -89,6 +89,16 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Exchange API keys
+    binance_api_key = db.Column(db.String(256), nullable=True)
+    binance_api_secret = db.Column(db.String(256), nullable=True)
+    kraken_api_key = db.Column(db.String(256), nullable=True)
+    kraken_api_secret = db.Column(db.String(256), nullable=True)
+    
+    # Telegram notification settings
+    telegram_bot_token = db.Column(db.String(256), nullable=True)
+    telegram_chat_id = db.Column(db.String(256), nullable=True)
+    
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
     
     def is_authenticated(self):
@@ -314,11 +324,27 @@ def register():
             flash('Email già registrata. Utilizza un\'altra email.', 'danger')
             return redirect(url_for('register'))
             
+        # Ottieni i dati delle API degli exchange (opzionali)
+        binance_api_key = request.form.get('binance_api_key')
+        binance_api_secret = request.form.get('binance_api_secret')
+        kraken_api_key = request.form.get('kraken_api_key')
+        kraken_api_secret = request.form.get('kraken_api_secret')
+        
+        # Ottieni i dati di Telegram (opzionali)
+        telegram_bot_token = request.form.get('telegram_bot_token')
+        telegram_chat_id = request.form.get('telegram_chat_id')
+        
         # Create new user
         new_user = User(
             username=username,
             email=email,
-            password_hash=generate_password_hash(password)
+            password_hash=generate_password_hash(password),
+            binance_api_key=binance_api_key,
+            binance_api_secret=binance_api_secret,
+            kraken_api_key=kraken_api_key,
+            kraken_api_secret=kraken_api_secret,
+            telegram_bot_token=telegram_bot_token,
+            telegram_chat_id=telegram_chat_id
         )
         
         # Add user to database
