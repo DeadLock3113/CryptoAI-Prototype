@@ -906,6 +906,40 @@ def upload_original():
 
 @app.route('/analysis')
 @app.route('/analysis/<int:dataset_id>')
+
+@app.route('/delete_dataset/<int:dataset_id>', methods=['POST'])
+def delete_dataset(dataset_id):
+    """Elimina un dataset e tutti i dati associati"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa funzionalità.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Ottieni il dataset
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
+    
+    try:
+        # Elimina il file dal filesystem
+        if dataset.file_path and os.path.exists(dataset.file_path):
+            os.remove(dataset.file_path)
+        
+        # Memorizza il nome per il messaggio di conferma
+        dataset_name = dataset.name
+        
+        # Elimina il dataset dal database
+        # SQLAlchemy si occuperà di eliminare i dati correlati grazie alle relazioni cascade
+        db.session.delete(dataset)
+        db.session.commit()
+        
+        flash(f'Dataset "{dataset_name}" eliminato con successo.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Errore durante l\'eliminazione del dataset: {str(e)}', 'danger')
+        logger.error(f"Errore durante l'eliminazione del dataset {dataset_id}: {str(e)}")
+    
+    return redirect(url_for('analysis'))
+
 def analysis(dataset_id=None):
     """Data analysis page"""
     # Check if user is logged in

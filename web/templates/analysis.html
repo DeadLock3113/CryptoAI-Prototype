@@ -3,6 +3,29 @@
 {% block title %}Analisi - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
+<!-- Modal di conferma eliminazione dataset -->
+{% if selected_dataset %}
+<div class="modal fade" id="deleteDatasetModal" tabindex="-1" aria-labelledby="deleteDatasetModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteDatasetModalLabel">Conferma Eliminazione</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sei sicuro di voler eliminare il dataset <strong>"{{ selected_dataset.name }}"</strong>?</p>
+                <p class="text-danger">Questa azione è irreversibile e verranno eliminati tutti i dati associati, inclusi indicatori, risultati di backtest e modelli addestrati.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                <form action="{{ url_for('delete_dataset', dataset_id=selected_dataset.id) }}" method="POST">
+                    <button type="submit" class="btn btn-danger">Elimina Dataset</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 <div class="row mb-4">
     <div class="col-md-12">
         <div class="dashboard-card">
@@ -23,6 +46,11 @@
                     <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">
                         Carica Nuovo
                     </a>
+                    {% if selected_dataset %}
+                    <button type="button" class="btn btn-outline-danger btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#deleteDatasetModal">
+                        <i class="fas fa-trash"></i> Elimina
+                    </button>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
