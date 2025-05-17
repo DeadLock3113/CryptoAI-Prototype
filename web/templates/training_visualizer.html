@@ -637,6 +637,50 @@
             const data = JSON.parse(e.data);
             appendToLog(`ERRORE: ${data.error}`);
         });
+        
+        // Aggiungiamo l'event listener per il pulsante di interruzione
+        document.getElementById('stop-training-btn').addEventListener('click', function() {
+            // Conferma dell'interruzione
+            if (confirm('Sei sicuro di voler interrompere l\'addestramento? Questa azione non può essere annullata.')) {
+                // Disabilita il pulsante per evitare doppi clic
+                this.disabled = true;
+                this.innerHTML = '<i class="bi bi-hourglass-split"></i> Interruzione...';
+                
+                // Invia richiesta al server
+                fetch('/stop-training', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        training_id: '{{ training_id }}'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Successo
+                        appendToLog('Addestramento interrotto manualmente.');
+                        alert('Addestramento interrotto con successo!');
+                    } else {
+                        // Errore
+                        appendToLog(`Errore durante l'interruzione: ${data.error}`);
+                        alert(`Errore: ${data.error}`);
+                        // Riabilita il pulsante
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-stop-circle"></i> Interrompi';
+                    }
+                })
+                .catch(error => {
+                    console.error('Errore:', error);
+                    appendToLog(`Errore di comunicazione: ${error.message}`);
+                    alert('Si è verificato un errore durante la comunicazione con il server.');
+                    // Riabilita il pulsante
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-stop-circle"></i> Interrompi';
+                });
+            }
+        });
     });
 </script>
 {% endblock %}
