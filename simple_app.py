@@ -27,6 +27,7 @@ from functools import wraps
 # Import utility modules
 from utils.telegram_notification import send_price_alert, send_balance_update
 from utils.exchange_api import get_account_balances, ExchangeAPIError
+from utils.exchange_data_fetcher import get_historical_data, get_available_symbols, save_historical_data
 
 # Importa il gestore dell'addestramento
 import training_handler
@@ -573,6 +574,158 @@ def change_password():
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
+    """Data upload page"""
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Redirect alla nuova interfaccia unificata per upload e acquisizione dati
+    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
+    return render_template('fetch_exchange_data.html', datasets=user_datasets)
+        
+@app.route('/fetch_exchange_data', methods=['GET', 'POST'])
+def fetch_exchange_data():
+    """Pagina per scaricare dati storici dagli exchange usando le API"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Ottieni i dataset esistenti dell'utente
+    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
+    
+    if request.method == 'POST':
+        # Ottieni i parametri dalla richiesta
+        exchange = request.form.get('exchange', '').lower()
+        symbol = request.form.get('symbol', '')
+        interval = request.form.get('interval', '1h')
+        dataset_name = request.form.get('dataset_name', '')
+        description = request.form.get('description', '')
+        use_api_keys = request.form.get('use_api_keys') == 'on'
+        
+        # Ottieni le date di inizio e fine se specificate
+        start_date_str = request.form.get('start_date')
+        end_date_str = request.form.get('end_date')
+        
+        start_date = None
+        end_date = None
+        
+        if start_date_str:
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            except ValueError:
+                flash('Formato data inizio non valido. Usa YYYY-MM-DD.', 'danger')
+                return redirect(url_for('fetch_exchange_data'))
+        
+        if end_date_str:
+            try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                # Imposta l'ora a 23:59:59 per includere l'intero giorno
+                end_date = end_date.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                flash('Formato data fine non valido. Usa YYYY-MM-DD.', 'danger')
+                return redirect(url_for('fetch_exchange_data'))
+        
+        # Valida i parametri
+        if not (exchange and symbol and interval and dataset_name):
+            flash('Tutti i campi obbligatori devono essere compilati.', 'danger')
+            return redirect(url_for('fetch_exchange_data'))
+        
+        # Verifica che il dataset con lo stesso nome non esista già
+        existing_dataset = Dataset.query.filter_by(user_id=user.id, name=dataset_name).first()
+        if existing_dataset:
+            flash(f'Esiste già un dataset con il nome "{dataset_name}". Scegli un nome diverso.', 'danger')
+            return redirect(url_for('fetch_exchange_data'))
+        
+        # Prepara le API key se necessario
+        api_key = None
+        api_secret = None
+        
+        if use_api_keys:
+            if exchange == 'binance' and user.binance_api_key and user.binance_api_secret:
+                api_key = user.binance_api_key
+                api_secret = user.binance_api_secret
+            elif exchange == 'kraken' and user.kraken_api_key and user.kraken_api_secret:
+                api_key = user.kraken_api_key
+                api_secret = user.kraken_api_secret
+        
+        try:
+            # Ottieni i dati storici dall'exchange
+            logger.info(f"Avvio download dati da {exchange} per {symbol} con intervallo {interval}")
+            
+            df = get_historical_data(
+                exchange=exchange,
+                symbol=symbol,
+                interval=interval,
+                start_time=start_date,
+                end_time=end_date,
+                api_key=api_key,
+                api_secret=api_secret
+            )
+            
+            # Verifica che ci siano dati
+            if df.empty:
+                flash(f'Nessun dato disponibile per {symbol} nel periodo specificato.', 'warning')
+                return redirect(url_for('fetch_exchange_data'))
+            
+            logger.info(f"Scaricati {len(df)} record per {symbol}")
+            
+            # Crea la directory per salvare il file
+            upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], str(user.id))
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            # Genera un nome file univoco
+            file_uuid = uuid.uuid4().hex
+            file_path = os.path.join(upload_dir, f"{file_uuid}.csv")
+            
+            # Salva i dati
+            save_historical_data(df, file_path)
+            
+            # Crea il dataset nel database
+            if not description:
+                description = f"Dati scaricati da {exchange} per {symbol}, interval: {interval}, creato il {datetime.now().strftime('%Y-%m-%d')}"
+            
+            new_dataset = Dataset(
+                name=dataset_name,
+                symbol=symbol,
+                description=description,
+                file_path=file_path,
+                rows_count=len(df),
+                start_date=df.index.min().to_pydatetime() if not df.empty else None,
+                end_date=df.index.max().to_pydatetime() if not df.empty else None,
+                user_id=user.id
+            )
+            
+            db.session.add(new_dataset)
+            db.session.commit()
+            
+            flash(f'Dataset "{dataset_name}" con {len(df)} record creato con successo!', 'success')
+            return redirect(url_for('analysis', dataset_id=new_dataset.id))
+            
+        except Exception as e:
+            logger.error(f"Errore durante il download dei dati: {str(e)}")
+            flash(f'Errore durante il download dei dati: {str(e)}', 'danger')
+            return redirect(url_for('fetch_exchange_data'))
+    
+    return render_template('fetch_exchange_data.html', datasets=user_datasets)
+
+@app.route('/api/exchange_symbols')
+def exchange_symbols_api():
+    """API per ottenere i simboli disponibili su un exchange"""
+    exchange = request.args.get('exchange', 'binance')
+    
+    try:
+        symbols = get_available_symbols(exchange)
+        return jsonify({'symbols': symbols})
+    except Exception as e:
+        logger.error(f"Errore nel recupero dei simboli: {str(e)}")
+        return jsonify({'error': str(e), 'symbols': []})
+        
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_original():
     """Data upload page"""
     # Check if user is logged in
     user = get_current_user()
