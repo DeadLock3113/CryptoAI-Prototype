@@ -204,7 +204,7 @@ def generate_price_chart(data, symbol, resolution='full'):
                    transparent=False)
         buffer.seek(0)
         
-        # Convert plot to base64 with optimized compression
+        # Convert plot to base64
         chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
         plt.close(fig)
         
