@@ -323,9 +323,27 @@ def upload():
         delimiter = request.form.get('delimiter', ',')
         
         # Save the file with a unique name
-        filename = f"{uuid.uuid4()}_{secure_filename(file.filename)}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        try:
+            # Make sure upload folder exists
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            
+            # Generate unique filename
+            filename = f"{uuid.uuid4()}_{secure_filename(file.filename)}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # Log the filepath for debugging
+            logger.debug(f"Saving file to: {filepath}")
+            
+            # Save the file
+            file.save(filepath)
+            
+            # Check if file was saved successfully
+            if not os.path.exists(filepath):
+                raise Exception("File could not be saved to disk")
+        except Exception as e:
+            logger.error(f"Error saving file: {str(e)}")
+            flash(f'Errore nel salvataggio del file: {str(e)}', 'danger')
+            return redirect(request.url)
         
         try:
             # Process the CSV file

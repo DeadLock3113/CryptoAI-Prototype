@@ -1,161 +1,105 @@
 {% extends "layout.html" %}
 
-{% block title %}Upload Data{% endblock %}
-
-{% block page_header %}Carica i tuoi dati{% endblock %}
-
-{% block page_description %}
-Carica i dati di criptovalute per iniziare l'analisi
-{% endblock %}
+{% block title %}Carica Dati - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-file-upload me-2"></i>
-                    Upload CSV
-                </h5>
+    <div class="col-lg-8 mx-auto">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header">
+                <h2 class="dashboard-card-title">Carica Dataset</h2>
             </div>
-            <div class="card-body">
-                <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
-                    <div class="mb-4">
-                        <label for="file" class="form-label">File CSV</label>
-                        <input class="form-control" type="file" id="file" name="file" accept=".csv" required>
-                        <div class="form-text">Supporta file CSV con dati OHLCV (Open, High, Low, Close, Volume)</div>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label for="name" class="form-label">Nome Dataset</label>
-                        <input type="text" class="form-control" id="name" name="name" placeholder="Bitcoin Historical Data" required>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label for="symbol" class="form-label">Simbolo</label>
-                        <input type="text" class="form-control" id="symbol" name="symbol" placeholder="BTC/USDT" required>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label for="description" class="form-label">Descrizione</label>
-                        <textarea class="form-control" id="description" name="description" rows="3" placeholder="Dati storici Bitcoin dal 2020 al 2023"></textarea>
-                    </div>
-                    
-                    <hr class="my-4">
-                    
-                    <h6>Configurazione Colonne</h6>
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <label for="date_format" class="form-label">Formato Data</label>
-                            <select class="form-select" id="date_format" name="date_format">
-                                <option value="auto" selected>Auto-detect</option>
-                                <option value="%Y-%m-%d">YYYY-MM-DD</option>
-                                <option value="%d-%m-%Y">DD-MM-YYYY</option>
-                                <option value="%m-%d-%Y">MM-DD-YYYY</option>
-                                <option value="%Y/%m/%d">YYYY/MM/DD</option>
-                                <option value="unix">Unix Timestamp</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="delimiter" class="form-label">Delimitatore</label>
-                            <select class="form-select" id="delimiter" name="delimiter">
-                                <option value="," selected>Virgola (,)</option>
-                                <option value=";">Punto e virgola (;)</option>
-                                <option value="\t">Tab</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-upload me-2"></i>
-                            Carica File
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-lg-6">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>
-                    Requisiti File CSV
-                </h5>
-            </div>
-            <div class="card-body">
-                <p>Per un'analisi ottimale, il tuo file CSV dovrebbe contenere i seguenti dati:</p>
+            
+            <form method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Nome Dataset</label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">Un nome descrittivo per identificare il dataset</div>
+                </div>
                 
-                <h6 class="mt-3">Colonne richieste:</h6>
-                <ul class="list-group mb-4">
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>Timestamp/Date</strong>
-                            <div class="text-muted small">Data e ora nel formato selezionato</div>
-                        </div>
-                        <span class="badge bg-primary">Richiesto</span>
+                <div class="mb-3">
+                    <label for="symbol" class="form-label">Simbolo</label>
+                    <input type="text" class="form-control" id="symbol" name="symbol" required>
+                    <div class="form-text">Il simbolo della criptovaluta (es. BTC, ETH, XRP)</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="description" class="form-label">Descrizione</label>
+                    <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    <div class="form-text">Una breve descrizione del dataset (opzionale)</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="file" class="form-label">File CSV</label>
+                    <input class="form-control" type="file" id="file" name="file" accept=".csv" required>
+                    <div class="form-text">
+                        Il file deve contenere almeno le colonne: timestamp/date, open, high, low, close (volume opzionale).
+                        Formato CSV con una riga di intestazione.
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="date_format" class="form-label">Formato Data</label>
+                        <select class="form-select" id="date_format" name="date_format">
+                            <option value="auto" selected>Auto-rilevamento</option>
+                            <option value="%Y-%m-%d">YYYY-MM-DD</option>
+                            <option value="%d/%m/%Y">DD/MM/YYYY</option>
+                            <option value="%m/%d/%Y">MM/DD/YYYY</option>
+                            <option value="%Y-%m-%d %H:%M:%S">YYYY-MM-DD HH:MM:SS</option>
+                            <option value="unix">Timestamp Unix</option>
+                        </select>
+                        <div class="form-text">Formato della colonna data nel CSV</div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="delimiter" class="form-label">Delimitatore</label>
+                        <select class="form-select" id="delimiter" name="delimiter">
+                            <option value="," selected>Virgola (,)</option>
+                            <option value=";">Punto e virgola (;)</option>
+                            <option value="\t">Tab</option>
+                            <option value="|">Barra verticale (|)</option>
+                        </select>
+                        <div class="form-text">Il carattere usato per separare le colonne</div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">Carica Dataset</button>
+                </div>
+            </form>
+        </div>
+        
+        <div class="dashboard-card mt-4">
+            <div class="dashboard-card-header">
+                <h3 class="dashboard-card-title">Requisiti del File CSV</h3>
+            </div>
+            
+            <div class="alert alert-info mb-0">
+                <h5>Formato richiesto:</h5>
+                <ul>
+                    <li><strong>Intestazione:</strong> Il file deve avere una riga di intestazione</li>
+                    <li><strong>Colonne richieste:</strong> 
+                        <ul>
+                            <li><code>date</code> o <code>timestamp</code> - La data/ora del candle</li>
+                            <li><code>open</code> - Prezzo di apertura</li>
+                            <li><code>high</code> - Prezzo massimo</li>
+                            <li><code>low</code> - Prezzo minimo</li>
+                            <li><code>close</code> - Prezzo di chiusura</li>
+                        </ul>
                     </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>Open</strong>
-                            <div class="text-muted small">Prezzo di apertura del periodo</div>
-                        </div>
-                        <span class="badge bg-primary">Richiesto</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>High</strong>
-                            <div class="text-muted small">Prezzo massimo del periodo</div>
-                        </div>
-                        <span class="badge bg-primary">Richiesto</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>Low</strong>
-                            <div class="text-muted small">Prezzo minimo del periodo</div>
-                        </div>
-                        <span class="badge bg-primary">Richiesto</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>Close</strong>
-                            <div class="text-muted small">Prezzo di chiusura del periodo</div>
-                        </div>
-                        <span class="badge bg-primary">Richiesto</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>Volume</strong>
-                            <div class="text-muted small">Volume di scambio nel periodo</div>
-                        </div>
-                        <span class="badge bg-secondary">Opzionale</span>
+                    <li><strong>Colonne opzionali:</strong>
+                        <ul>
+                            <li><code>volume</code> - Volume di trading</li>
+                        </ul>
                     </li>
                 </ul>
                 
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Importante:</strong> Assicurati che i dati siano ordinati cronologicamente (dal più vecchio al più recente) per risultati ottimali.
-                </div>
-                
-                <h6 class="mt-3">Esempio di formato corretto:</h6>
-                <div class="bg-light p-3 rounded mb-3" style="overflow-x: auto;">
-                    <pre class="mb-0"><code>timestamp,open,high,low,close,volume
-2023-01-01,16500.25,16789.45,16420.10,16750.30,1250.45
-2023-01-02,16750.30,16890.20,16520.75,16620.80,980.22
-2023-01-03,16620.80,17100.55,16600.30,17050.40,1550.76</code></pre>
-                </div>
-                
-                <div class="mt-4">
-                    <h6>Fonti consigliate per i dati:</h6>
-                    <ul>
-                        <li><a href="https://www.binance.com/" target="_blank">Binance</a> - Esporta dati storici</li>
-                        <li><a href="https://www.coinbase.com/" target="_blank">Coinbase</a> - Strumenti per sviluppatori</li>
-                        <li><a href="https://www.coingecko.com/" target="_blank">CoinGecko</a> - API per dati storici</li>
-                        <li><a href="https://finance.yahoo.com/" target="_blank">Yahoo Finance</a> - Dati di mercato esportabili</li>
-                    </ul>
-                </div>
+                <h5>Esempio:</h5>
+                <pre>date,open,high,low,close,volume
+2023-01-01,42000.50,43200.75,41800.25,42800.50,1250.5
+2023-01-02,42800.50,44500.25,42750.00,44250.75,1876.25
+...</pre>
             </div>
         </div>
     </div>

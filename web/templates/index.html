@@ -1,191 +1,79 @@
 {% extends "layout.html" %}
 
-{% block title %}Home{% endblock %}
-
-{% block page_header %}CryptoTradeAnalyzer{% endblock %}
-
-{% block page_description %}
-Advanced cryptocurrency trading analysis platform with deep learning and backtesting capabilities
-{% endblock %}
+{% block title %}Home - CryptoTradeAnalyzer{% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-lg-8">
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
-                <h2 class="card-title">Welcome to CryptoTradeAnalyzer</h2>
-                <p class="card-text">
-                    CryptoTradeAnalyzer is a comprehensive platform for quantitative analysis of cryptocurrency trading strategies.
-                    With advanced machine learning capabilities, including LSTM and RNN models, you can analyze historical data,
-                    develop sophisticated trading strategies, and evaluate their performance.
-                </p>
-                <p>Get started by uploading your cryptocurrency price data.</p>
-                <a href="{{ url_for('upload') }}" class="btn btn-primary">
-                    <i class="fas fa-upload me-2"></i> Upload Data
-                </a>
-            </div>
-        </div>
+    <div class="col-md-8 mx-auto text-center">
+        <h1 class="display-4 mb-4">CryptoTradeAnalyzer</h1>
+        <p class="lead mb-4">
+            Analisi avanzata per trading di criptovalute con implementazione di modelli RNN e LSTM,
+            backtesting accurato e architettura modulare.
+        </p>
         
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-body">
-                        <h3 class="card-title">
-                            <i class="fas fa-chart-line text-primary me-2"></i>
-                            Technical Analysis
-                        </h3>
-                        <p class="card-text">
-                            Apply a wide range of technical indicators including RSI, MACD, Bollinger Bands, 
-                            Stochastic Oscillator, and more to identify potential trading opportunities.
-                        </p>
-                        <a href="{{ url_for('indicators') }}" class="btn btn-outline-primary btn-sm">
-                            Explore Indicators
-                        </a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-body">
-                        <h3 class="card-title">
-                            <i class="fas fa-robot text-primary me-2"></i>
-                            Machine Learning
-                        </h3>
-                        <p class="card-text">
-                            Leverage the power of deep learning models including LSTM, RNN, and ensemble methods
-                            to predict cryptocurrency price movements.
-                        </p>
-                        <a href="{{ url_for('models') }}" class="btn btn-outline-primary btn-sm">
-                            Train Models
-                        </a>
-                    </div>
-                </div>
-            </div>
+        {% if not current_user %}
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mb-5">
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg px-4 me-sm-3">Login</a>
+            <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-lg px-4">Registrati</a>
         </div>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-body">
-                        <h3 class="card-title">
-                            <i class="fas fa-sync-alt text-primary me-2"></i>
-                            Backtesting
-                        </h3>
-                        <p class="card-text">
-                            Test your trading strategies on historical data with realistic simulations of
-                            slippage, fees, and market conditions. Analyze detailed performance metrics.
-                        </p>
-                        <a href="{{ url_for('backtest') }}" class="btn btn-outline-primary btn-sm">
-                            Run Backtest
-                        </a>
-                    </div>
-                </div>
+        {% else %}
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mb-5">
+            <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg px-4 me-sm-3">Carica Dati</a>
+            <a href="{{ url_for('analysis') }}" class="btn btn-outline-secondary btn-lg px-4">Analizza</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header">
+                <h4 class="dashboard-card-title">Analisi Tecnica</h4>
             </div>
-            <div class="col-md-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-body">
-                        <h3 class="card-title">
-                            <i class="fas fa-analytics text-primary me-2"></i>
-                            Performance Analytics
-                        </h3>
-                        <p class="card-text">
-                            Evaluate strategy performance with comprehensive metrics including Sharpe ratio,
-                            Sortino ratio, drawdown analysis, and equity curves.
-                        </p>
-                        <a href="{{ url_for('analysis') }}" class="btn btn-outline-primary btn-sm">
-                            View Analytics
-                        </a>
-                    </div>
-                </div>
-            </div>
+            <p>
+                Analizza i tuoi dati di trading con indicatori tecnici avanzati.
+                Supporta tutti gli indicatori principali come RSI, MACD, Bollinger Bands e molti altri.
+            </p>
+            {% if current_user %}
+            <a href="{{ url_for('indicators') }}" class="btn btn-sm btn-outline-primary">Inizia</a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-sm btn-outline-primary">Login per iniziare</a>
+            {% endif %}
         </div>
     </div>
     
-    <div class="col-lg-4">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-graduation-cap me-2"></i>
-                    Getting Started
-                </h5>
+    <div class="col-md-4">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header">
+                <h4 class="dashboard-card-title">Backtesting</h4>
             </div>
-            <div class="card-body">
-                <ol class="list-group list-group-numbered mb-0">
-                    <li class="list-group-item d-flex">
-                        <div>
-                            <strong>Upload Data</strong>
-                            <p class="mb-0 text-muted">
-                                Upload CSV files with OHLCV cryptocurrency data
-                            </p>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex">
-                        <div>
-                            <strong>Analyze Your Data</strong>
-                            <p class="mb-0 text-muted">
-                                View statistics and visualizations of your data
-                            </p>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex">
-                        <div>
-                            <strong>Apply Technical Indicators</strong>
-                            <p class="mb-0 text-muted">
-                                Add technical indicators to identify patterns
-                            </p>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex">
-                        <div>
-                            <strong>Backtest Strategies</strong>
-                            <p class="mb-0 text-muted">
-                                Test trading strategies on historical data
-                            </p>
-                        </div>
-                    </li>
-                    <li class="list-group-item d-flex">
-                        <div>
-                            <strong>Train ML Models</strong>
-                            <p class="mb-0 text-muted">
-                                Develop predictive models for price forecasting
-                            </p>
-                        </div>
-                    </li>
-                </ol>
-            </div>
+            <p>
+                Verifica le tue strategie di trading su dati storici.
+                Valuta performance, drawdown, sharpe ratio e altri metriche di performance.
+            </p>
+            {% if current_user %}
+            <a href="{{ url_for('backtest') }}" class="btn btn-sm btn-outline-primary">Inizia</a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-sm btn-outline-primary">Login per iniziare</a>
+            {% endif %}
         </div>
-        
-        <div class="card shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>
-                    Features
-                </h5>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="dashboard-card">
+            <div class="dashboard-card-header">
+                <h4 class="dashboard-card-title">Machine Learning</h4>
             </div>
-            <div class="card-body">
-                <div class="list-group">
-                    <div class="list-group-item">
-                        <i class="fas fa-check-circle text-success me-2"></i>
-                        Deep Learning Models (LSTM, RNN)
-                    </div>
-                    <div class="list-group-item">
-                        <i class="fas fa-check-circle text-success me-2"></i>
-                        Comprehensive Technical Indicators
-                    </div>
-                    <div class="list-group-item">
-                        <i class="fas fa-check-circle text-success me-2"></i>
-                        Realistic Backtesting Framework
-                    </div>
-                    <div class="list-group-item">
-                        <i class="fas fa-check-circle text-success me-2"></i>
-                        Performance Analytics & Visualization
-                    </div>
-                    <div class="list-group-item">
-                        <i class="fas fa-check-circle text-success me-2"></i>
-                        Strategy Optimization & Ensemble Models
-                    </div>
-                </div>
-            </div>
+            <p>
+                Utilizza modelli avanzati di machine learning (RNN, LSTM) per prevedere l'andamento dei prezzi
+                e identificare opportunità di trading.
+            </p>
+            {% if current_user %}
+            <a href="{{ url_for('models') }}" class="btn btn-sm btn-outline-primary">Inizia</a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-sm btn-outline-primary">Login per iniziare</a>
+            {% endif %}
         </div>
     </div>
 </div>

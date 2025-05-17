@@ -1,146 +1,129 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% endblock %} | CryptoTradeAnalyzer</title>
+    <title>{% block title %}CryptoTradeAnalyzer{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
-    <!-- Custom styles -->
+    <!-- Custom CSS -->
     <style>
+        /* Custom styles */
+        body {
+            padding-top: 56px;
+            background-color: #f5f5f5;
+        }
+        
         .navbar-brand {
-            font-weight: 700;
+            font-weight: bold;
         }
         
-        .page-header {
-            padding: 2.5rem 0;
-            margin-bottom: 2rem;
-            background-color: rgba(0, 0, 0, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        .chart-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
         
-        .page-header h1 {
-            font-weight: 700;
-            margin-bottom: 0.5rem;
+        .login-container, .register-container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 30px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            margin-top: 40px;
         }
         
-        .page-header p {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 1.1rem;
-            margin-bottom: 0;
+        .dashboard-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: transform 0.3s;
         }
         
-        .card {
-            margin-bottom: 1.5rem;
-            border: none;
-            background-color: var(--bs-secondary-bg);
+        .dashboard-card:hover {
+            transform: translateY(-5px);
         }
         
-        .card-header {
-            border-bottom: none;
-            font-weight: 600;
+        .dashboard-card-header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
         }
         
-        .card-header.bg-primary,
-        .card-header.bg-success,
-        .card-header.bg-info,
-        .card-header.bg-warning,
-        .card-header.bg-danger {
+        .dashboard-card-title {
+            margin: 0;
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        .footer {
+            margin-top: 50px;
+            padding: 20px 0;
+            background-color: #343a40;
             color: white;
         }
-        
-        .alert {
-            border: none;
-        }
-        
-        footer {
-            padding: 2rem 0;
-            margin-top: 3rem;
-            background-color: rgba(0, 0, 0, 0.1);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
     </style>
+    
+    {% block head %}{% endblock %}
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="fas fa-chart-line me-2"></i>
-                CryptoTradeAnalyzer
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <a class="navbar-brand" href="{{ url_for('index') }}">CryptoTradeAnalyzer</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" 
-                           href="{{ url_for('index') }}">Home</a>
+                        <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+                    </li>
+                    
+                    {% if current_user %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('upload') }}">Carica Dati</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'upload' %}active{% endif %}" 
-                           href="{{ url_for('upload') }}">Upload</a>
+                        <a class="nav-link" href="{{ url_for('analysis') }}">Analisi</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'analysis' %}active{% endif %}" 
-                           href="{{ url_for('analysis') }}">Analysis</a>
+                        <a class="nav-link" href="{{ url_for('indicators') }}">Indicatori</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'indicators' %}active{% endif %}" 
-                           href="{{ url_for('indicators') }}">Indicators</a>
+                        <a class="nav-link" href="{{ url_for('backtest') }}">Backtest</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'backtest' %}active{% endif %}" 
-                           href="{{ url_for('backtest') }}">Backtest</a>
+                        <a class="nav-link" href="{{ url_for('models') }}">ML Models</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'models' %}active{% endif %}" 
-                           href="{{ url_for('models') }}">ML Models</a>
-                    </li>
+                    {% endif %}
                 </ul>
-                <ul class="navbar-nav ms-auto">
-                    {% if current_user.is_authenticated %}
+                
+                <ul class="navbar-nav">
+                    {% if current_user %}
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" 
-                           data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-user me-1"></i> {{ current_user.username }}
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            {{ current_user.username }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                            <li>
-                                <a class="dropdown-item" href="{{ url_for('profile') }}">
-                                    <i class="fas fa-id-card me-2"></i> Profilo
-                                </a>
-                            </li>
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}">Profilo</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item text-danger" href="{{ url_for('clear_data') }}">
-                                    <i class="fas fa-trash-alt me-2"></i> Elimina dati
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="{{ url_for('logout') }}">
-                                    <i class="fas fa-sign-out-alt me-2"></i> Logout
-                                </a>
-                            </li>
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
                         </ul>
                     </li>
                     {% else %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('login') }}">
-                            <i class="fas fa-sign-in-alt me-1"></i> Login
-                        </a>
+                        <a class="nav-link" href="{{ url_for('login') }}">Login</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('register') }}">
-                            <i class="fas fa-user-plus me-1"></i> Registrati
-                        </a>
+                        <a class="nav-link" href="{{ url_for('register') }}">Registrati</a>
                     </li>
                     {% endif %}
                 </ul>
@@ -148,78 +131,36 @@
         </div>
     </nav>
     
-    <!-- Page Header -->
-    {% if self.page_header() %}
-    <header class="page-header">
-        <div class="container">
-            <h1>{% block page_header %}{% endblock %}</h1>
-            <p>{% block page_description %}{% endblock %}</p>
-        </div>
-    </header>
-    {% endif %}
+    <!-- Flash Messages -->
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
     
     <!-- Main Content -->
-    <main class="container py-4">
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="row">
-            <div class="col">
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        {% endwith %}
-        
-        <!-- Content -->
+    <div class="container mt-4">
         {% block content %}{% endblock %}
-    </main>
+    </div>
     
     <!-- Footer -->
-    <footer>
-        <div class="container">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>CryptoTradeAnalyzer</h5>
-                    <p class="text-muted">
-                        Advanced cryptocurrency trading analysis platform with deep learning and backtesting capabilities.
-                    </p>
-                </div>
-                <div class="col-md-3">
-                    <h5>Links</h5>
-                    <ul class="list-unstyled">
-                        <li><a href="{{ url_for('index') }}">Home</a></li>
-                        <li><a href="{{ url_for('upload') }}">Upload Data</a></li>
-                        <li><a href="{{ url_for('analysis') }}">Analysis</a></li>
-                    </ul>
-                </div>
-                <div class="col-md-3">
-                    <h5>Features</h5>
-                    <ul class="list-unstyled">
-                        <li><a href="{{ url_for('indicators') }}">Technical Indicators</a></li>
-                        <li><a href="{{ url_for('backtest') }}">Backtesting</a></li>
-                        <li><a href="{{ url_for('models') }}">ML Models</a></li>
-                    </ul>
-                </div>
-            </div>
-            <hr>
-            <div class="row">
-                <div class="col-md-12 text-center">
-                    <p class="mb-0">© {{ current_year }} CryptoTradeAnalyzer. All rights reserved.</p>
-                </div>
-            </div>
+    <footer class="footer mt-auto py-3 bg-dark">
+        <div class="container text-center">
+            <span class="text-muted">© {{ current_year }} {{ app_name }} - Tutti i diritti riservati</span>
         </div>
     </footer>
     
-    <!-- Bootstrap Bundle with Popper -->
+    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- Custom scripts -->
+    <!-- Custom JS -->
     {% block scripts %}{% endblock %}
 </body>
 </html>
