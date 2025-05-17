@@ -1823,75 +1823,114 @@ def models():
             # Training message
             logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples on {device}")
             
-            # Training loop con limitazioni per evitare timeout
-            max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
-            logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
-            
-            for epoch in range(max_training_epochs):
-                # Training
-                model.train()
-                train_loss = 0
+            # OPZIONE 1: Modalità demo per addestramento veloce nella UI
+            interactive_mode = request.form.get('interactive_mode') == 'on'
+            if interactive_mode:
+                # Creiamo una nuova sessione di addestramento
+                training_id, training_session = training_handler.create_training_session(
+                    model_type=model_type,
+                    model_name=model_name,
+                    dataset_id=dataset_id,
+                    dataset_name=selected_dataset.name,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    lookback=lookback,
+                    learning_rate=lr,
+                    device=str(device),
+                    demo_mode=True  # Usiamo la modalità demo per la visualizzazione interattiva
+                )
                 
-                # Limitiamo il numero di batch per evitare timeout
-                max_batches = min(len(train_loader), 10)
-                batch_count = 0
+                # Avvieremo l'addestramento quando l'utente accede alla pagina
+                # ma salviamo i componenti necessari nella sessione
+                session['training_data'] = {
+                    training_id: {
+                        'model_type': model_type,
+                        'model_name': model_name,
+                        'dataset_id': dataset_id,
+                        'dataset_name': selected_dataset.name,
+                        'epochs': epochs,
+                        'batch_size': batch_size,
+                        'lookback': lookback,
+                        'learning_rate': lr,
+                        'device': str(device)
+                    }
+                }
                 
-                for i, (inputs, targets) in enumerate(train_loader):
-                    if i >= max_batches:
-                        break  # Limitiamo il numero di batch
-                        
-                    inputs, targets = inputs.to(device), targets.to(device)
+                # Redirect alla pagina di visualizzazione interattiva
+                flash('Sessione di addestramento creata. Monitoraggio interattivo attivato.', 'success')
+                return redirect(url_for('training_visualizer', training_id=training_id))
+                
+            # OPZIONE 2: Modalità demo originale (addestramento limitato nella request HTTP)
+            else:
+                # Training loop con limitazioni per evitare timeout
+                max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
+                logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
+                
+                for epoch in range(max_training_epochs):
+                    # Training
+                    model.train()
+                    train_loss = 0
                     
-                    # Forward pass
-                    optimizer.zero_grad()
-                    outputs = model(inputs)
-                    loss = criterion(outputs, targets)
+                    # Limitiamo il numero di batch per evitare timeout
+                    max_batches = min(len(train_loader), 10)
+                    batch_count = 0
                     
-                    # Backward and optimize
-                    loss.backward()
-                    optimizer.step()
-                    
-                    train_loss += loss.item()
-                    batch_count += 1
-                
-                # Validation - limitiamo anche questa
-                model.eval()
-                val_loss = 0
-                max_val_batches = min(len(test_loader), 5)
-                val_batch_count = 0
-                
-                with torch.no_grad():
-                    for i, (inputs, targets) in enumerate(test_loader):
-                        if i >= max_val_batches:
-                            break  # Limitiamo il numero di batch di validazione
+                    for i, (inputs, targets) in enumerate(train_loader):
+                        if i >= max_batches:
+                            break  # Limitiamo il numero di batch
                             
                         inputs, targets = inputs.to(device), targets.to(device)
+                        
+                        # Forward pass
+                        optimizer.zero_grad()
                         outputs = model(inputs)
                         loss = criterion(outputs, targets)
-                        val_loss += loss.item()
-                        val_batch_count += 1
-                
-                # Calculate average losses
-                train_loss = train_loss / batch_count if batch_count > 0 else 0
-                val_loss = val_loss / val_batch_count if val_batch_count > 0 else 0
-                
-                # Store history
-                history['loss'].append(train_loss)
-                history['val_loss'].append(val_loss)
-                
-                # Salva sempre il modello nell'ultima epoca in modalità demo
-                if epoch == max_training_epochs - 1:
-                    best_model_state = model.state_dict().copy()
-                # Early stopping - semplificato per demo
-                elif val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    best_model_state = model.state_dict().copy()
-                
-                # Print progress per ogni epoca in modalità demo
-                logger.debug(f'Epoca [{epoch+1}/{max_training_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
-                
-            # Notifica all'utente che è stata usata la modalità demo
-            flash('Addestramento completato in modalità demo (limitata). Per un addestramento completo, considera di utilizzare uno script offline.', 'warning')
+                        
+                        # Backward and optimize
+                        loss.backward()
+                        optimizer.step()
+                        
+                        train_loss += loss.item()
+                        batch_count += 1
+                    
+                    # Validation - limitiamo anche questa
+                    model.eval()
+                    val_loss = 0
+                    max_val_batches = min(len(test_loader), 5)
+                    val_batch_count = 0
+                    
+                    with torch.no_grad():
+                        for i, (inputs, targets) in enumerate(test_loader):
+                            if i >= max_val_batches:
+                                break  # Limitiamo il numero di batch di validazione
+                                
+                            inputs, targets = inputs.to(device), targets.to(device)
+                            outputs = model(inputs)
+                            loss = criterion(outputs, targets)
+                            val_loss += loss.item()
+                            val_batch_count += 1
+                    
+                    # Calculate average losses
+                    train_loss = train_loss / batch_count if batch_count > 0 else 0
+                    val_loss = val_loss / val_batch_count if val_batch_count > 0 else 0
+                    
+                    # Store history
+                    history['loss'].append(train_loss)
+                    history['val_loss'].append(val_loss)
+                    
+                    # Salva sempre il modello nell'ultima epoca in modalità demo
+                    if epoch == max_training_epochs - 1:
+                        best_model_state = model.state_dict().copy()
+                    # Early stopping - semplificato per demo
+                    elif val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        best_model_state = model.state_dict().copy()
+                    
+                    # Print progress per ogni epoca in modalità demo
+                    logger.debug(f'Epoca [{epoch+1}/{max_training_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                    
+                # Notifica all'utente che è stata usata la modalità demo
+                flash('Addestramento completato in modalità demo (limitata). Per un monitoraggio interattivo, seleziona "Addestramento Interattivo".', 'warning')
             
             # Load best model
             if best_model_state:

@@ -5,25 +5,23 @@ Questo modulo implementa la gestione dell'addestramento interattivo
 dei modelli, inclusi gli aggiornamenti in tempo reale.
 """
 
-import os
-import time
-import json
 import uuid
-import math
-import logging
+import time
 import threading
-import numpy as np
+import logging
+import random
+import math
+import json
 from datetime import datetime
+from threading import Thread
+from queue import Queue
+from collections import deque
 
-# Set up logger
-logging.basicConfig(level=logging.DEBUG)
+# Configurazione logging
 logger = logging.getLogger(__name__)
 
-# Dizionario per tenere traccia delle sessioni di addestramento attive
-active_trainings = {}
-
-# Lock per sicurezza nell'accesso concorrente
-training_lock = threading.Lock()
+# Dizionario per memorizzare le sessioni di addestramento attive
+active_sessions = {}
 
 class TrainingSession:
     """Classe per gestire una sessione di addestramento"""
@@ -43,187 +41,242 @@ class TrainingSession:
         self.device = device
         self.demo_mode = demo_mode
         
-        # Stato dell'addestramento
-        self.status = 'initialized'
+        # Statistiche di addestramento
+        self.status = 'initialized'  # initialized, running, completed, error, stopped
+        self.start_time = None
+        self.end_time = None
         self.current_epoch = 0
         self.train_loss = None
         self.val_loss = None
-        self.start_time = None
-        self.end_time = None
+        self.best_val_loss = float('inf')
+        self.early_stopping_counter = 0
+        self.early_stopping_patience = 5
         self.metrics = {}
-        self.history = {'loss': [], 'val_loss': []}
-        self.is_stopped = False
         
-        # Coda di eventi per SSE
-        self.events = []
+        # Per il thread e la comunicazione
+        self.thread = None
+        self.stop_event = threading.Event()
+        self.events = deque()
+        self.latest_timestamp = time.time()
         
-        # Thread di addestramento
-        self.training_thread = None
+        # Componenti per l'addestramento reale
+        self.model = None
+        self.train_loader = None
+        self.val_loader = None
+        self.criterion = None
+        self.optimizer = None
+        
+        logger.debug(f"Nuova sessione di addestramento creata: {training_id}")
     
     def start(self, model=None, train_loader=None, val_loader=None, criterion=None, optimizer=None):
         """Avvia l'addestramento in un thread separato"""
-        # Se è già in esecuzione, non fare nulla
-        if self.status == 'running':
+        if self.status != 'initialized':
+            logger.warning(f"Impossibile avviare la sessione {self.training_id} con stato {self.status}")
             return False
         
-        # Imposta lo stato su 'running' e registra l'ora di inizio
-        self.status = 'running'
-        self.start_time = time.time()
-        
-        # Salva riferimenti al modello e alle componenti di addestramento
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.criterion = criterion
         self.optimizer = optimizer
         
-        # Inizia il thread di addestramento
-        self.training_thread = threading.Thread(target=self._training_loop)
-        self.training_thread.daemon = True  # Il thread si fermerà quando il programma principale si ferma
-        self.training_thread.start()
+        self.status = 'running'
+        self.start_time = time.time()
+        self.add_event('training_started', {'message': 'Addestramento iniziato'})
         
+        # Avvia il thread di addestramento
+        self.thread = Thread(target=self._training_loop)
+        self.thread.daemon = True
+        self.thread.start()
+        
+        logger.debug(f"Addestramento avviato per sessione: {self.training_id}")
         return True
     
     def _training_loop(self):
         """Loop di addestramento - eseguito in un thread separato"""
         try:
-            # Se siamo in modalità demo o non abbiamo componenti di addestramento, simuliamo
+            # Scegli tra addestramento reale o simulato
             if self.demo_mode or not all([self.model, self.train_loader, self.val_loader, self.criterion, self.optimizer]):
+                logger.debug(f"Modalità demo attivata per sessione {self.training_id}")
                 self._simulated_training()
-                return
-            
-            # Altrimenti, eseguiamo l'addestramento reale con i componenti forniti
-            self._real_training()
+            else:
+                logger.debug(f"Addestramento reale avviato per sessione {self.training_id}")
+                self._real_training()
+                
+            # Completamento con successo
+            if not self.stop_event.is_set():
+                self.status = 'completed'
+                self.end_time = time.time()
+                self.add_event('training_complete', {
+                    'message': 'Addestramento completato con successo',
+                    'total_time': self.end_time - self.start_time,
+                    'final_loss': self.train_loss,
+                    'metrics': self.metrics
+                })
+                logger.debug(f"Addestramento completato per sessione {self.training_id}")
         
         except Exception as e:
-            logger.error(f"Errore nell'addestramento {self.training_id}: {str(e)}")
+            # Gestione degli errori
+            logger.error(f"Errore nell'addestramento per sessione {self.training_id}: {str(e)}")
             self.status = 'error'
-            self.add_event('training_error', {'error': str(e)})
+            self.end_time = time.time()
+            self.add_event('training_error', {
+                'error': str(e),
+                'message': 'Si è verificato un errore durante l\'addestramento'
+            })
     
     def _simulated_training(self):
         """Simula un addestramento per scopi dimostrativi"""
-        import random
+        # Parametri di simulazione
+        max_epochs = min(self.epochs, 10) if self.demo_mode else self.epochs
+        batches_per_epoch = int(1000 / self.batch_size)  # Simula 1000 campioni
         
-        logger.debug(f"Avvio addestramento simulato per {self.training_id}")
+        # Valori iniziali per loss
+        base_train_loss = 0.5
+        base_val_loss = 0.6
+        decay_rate = 0.7
         
-        # Inizializza la history
-        self.history = {'loss': [], 'val_loss': []}
-        
-        for epoch in range(1, self.epochs + 1):
-            # Controlla se è stata richiesta l'interruzione
-            if self.is_stopped:
-                logger.debug(f"Addestramento {self.training_id} interrotto manualmente all'epoca {epoch}")
-                self.status = 'stopped'
-                self.add_event('training_error', {'error': 'Addestramento interrotto manualmente'})
-                return
+        for epoch in range(1, max_epochs + 1):
+            if self.stop_event.is_set():
+                logger.debug(f"Addestramento interrotto durante l'epoca {epoch}")
+                break
             
-            # Simula il tempo di addestramento
-            time.sleep(0.5)
-            
-            # Simula le perdite (diminuiscono gradualmente)
-            train_loss = 0.5 * (1.0 - (epoch / self.epochs)) + 0.05 + (0.02 * random.random())
-            val_loss = train_loss + 0.05 + (0.05 * random.random())
-            
-            # Aggiorna lo stato
+            epoch_start_time = time.time()
             self.current_epoch = epoch
-            self.train_loss = train_loss
-            self.val_loss = val_loss
             
-            # Aggiungi alla history
-            self.history['loss'].append(train_loss)
-            self.history['val_loss'].append(val_loss)
+            # Simulazione batch per batch
+            batch_train_loss = base_train_loss * (1.0 + 0.3 * random.random())
+            for batch in range(1, batches_per_epoch + 1):
+                if self.stop_event.is_set():
+                    break
+                
+                # Simula il progresso dei batch e una varianza nella loss
+                progress = batch / batches_per_epoch
+                noise = 0.1 * random.random() - 0.05  # Rumore ±5%
+                current_loss = batch_train_loss * (1.0 - 0.3 * progress) + noise
+                
+                # Invia evento per il batch
+                if batch % max(1, int(batches_per_epoch / 10)) == 0:  # Ogni 10% dei batch
+                    self.add_event('batch_complete', {
+                        'batch': batch,
+                        'total_batches': batches_per_epoch,
+                        'loss': current_loss,
+                        'epoch': epoch
+                    })
+                
+                # Simula il tempo di calcolo
+                time.sleep(0.05 if self.demo_mode else 0.2)
             
-            # Calcola il tempo trascorso e rimanente
-            elapsed_time = time.time() - self.start_time
-            if epoch > 1:
-                avg_time_per_epoch = elapsed_time / epoch
-                estimated_remaining_time = avg_time_per_epoch * (self.epochs - epoch)
+            # Calcola loss di epoca con decadimento e rumore
+            epoch_factor = 1.0 / (1.0 + epoch * decay_rate / max_epochs)
+            random_factor = 1.0 + (random.random() - 0.5) * 0.1  # ±5%
+            
+            # Loss di training
+            self.train_loss = base_train_loss * epoch_factor * random_factor
+            
+            # Loss di validazione (leggermente più alta con una possibilità di aumentare)
+            random_val_factor = 1.0 + (random.random() - 0.4) * 0.2  # Tendenza al miglioramento
+            self.val_loss = base_val_loss * epoch_factor * random_val_factor
+            
+            # Occasionalmente, simula un peggioramento per early stopping
+            if epoch > max_epochs // 2 and random.random() < 0.3:
+                self.val_loss *= 1.1
+            
+            # Traccia il miglior modello e early stopping
+            if self.val_loss < self.best_val_loss:
+                self.best_val_loss = self.val_loss
+                self.early_stopping_counter = 0
             else:
-                estimated_remaining_time = None
+                self.early_stopping_counter += 1
             
-            # Prepara i dati dell'aggiornamento
-            update_data = {
+            # Calcola tempo trascorso per l'epoca
+            epoch_time = time.time() - epoch_start_time
+            
+            # Invia evento di completamento epoca
+            self.add_event('epoch_complete', {
                 'epoch': epoch,
-                'total_epochs': self.epochs,
-                'train_loss': train_loss,
-                'val_loss': val_loss,
-                'elapsed_time': elapsed_time,
-                'estimated_remaining_time': estimated_remaining_time
-            }
+                'total_epochs': max_epochs,
+                'loss': self.train_loss,
+                'val_loss': self.val_loss,
+                'elapsed_time': time.time() - self.start_time
+            })
             
-            # Aggiungi metriche casuali ogni 3 epoche o alla fine
-            if epoch % 3 == 0 or epoch == self.epochs:
-                self.metrics = {
-                    'mse': val_loss,
-                    'rmse': math.sqrt(val_loss),
-                    'mae': 0.8 * val_loss,
-                    'r2': max(0, 1 - (epoch / self.epochs))
-                }
-                update_data['metrics'] = self.metrics
+            # Early stopping
+            if self.early_stopping_counter >= self.early_stopping_patience:
+                logger.debug(f"Early stopping attivato all'epoca {epoch}")
+                self.add_event('early_stopping', {
+                    'message': f'Early stopping attivato dopo {epoch} epoche',
+                    'best_val_loss': self.best_val_loss
+                })
+                break
             
-            # Invia l'aggiornamento
-            self.add_event('epoch_update', update_data)
-        
-        # Addestramento completato
-        self.status = 'completed'
-        self.end_time = time.time()
-        
-        completion_data = {
-            'total_time': self.end_time - self.start_time,
-            'final_loss': self.train_loss,
-            'metrics': self.metrics
-        }
-        
-        self.add_event('training_complete', completion_data)
-        logger.debug(f"Addestramento simulato {self.training_id} completato")
+            # Pausa tra le epoche
+            time.sleep(0.2)
     
     def _real_training(self):
         """Esegue un addestramento reale con PyTorch"""
         import torch
         
-        logger.debug(f"Avvio addestramento reale per {self.training_id}")
+        # Verifica dei componenti necessari
+        if not all([self.model, self.train_loader, self.val_loader, self.criterion, self.optimizer]):
+            raise ValueError("Componenti mancanti per l'addestramento reale")
         
-        # Inizializza la history
-        self.history = {'loss': [], 'val_loss': []}
-        best_val_loss = float('inf')
-        best_model_state = None
+        # Adattamento per demo mode
+        max_epochs = min(self.epochs, 5) if self.demo_mode else self.epochs
         
-        for epoch in range(1, self.epochs + 1):
-            # Controlla se è stata richiesta l'interruzione
-            if self.is_stopped:
-                logger.debug(f"Addestramento {self.training_id} interrotto manualmente all'epoca {epoch}")
-                self.status = 'stopped'
-                self.add_event('training_error', {'error': 'Addestramento interrotto manualmente'})
-                return
+        # Inizializzazione
+        self.model.to(self.device)
+        best_model_state = self.model.state_dict().copy()
+        
+        # Training loop
+        for epoch in range(1, max_epochs + 1):
+            if self.stop_event.is_set():
+                logger.debug(f"Addestramento interrotto durante l'epoca {epoch}")
+                break
+            
+            epoch_start_time = time.time()
+            self.current_epoch = epoch
             
             # Training
             self.model.train()
             train_loss = 0
             batch_count = 0
             
-            for inputs, targets in self.train_loader:
-                # Controlla di nuovo per l'interruzione all'interno del loop interno
-                if self.is_stopped:
+            for batch_idx, (inputs, targets) in enumerate(self.train_loader):
+                if self.stop_event.is_set():
                     break
                 
-                # Sposta i dati sul dispositivo corretto
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                # Limita i batch in demo mode
+                if self.demo_mode and batch_idx >= min(len(self.train_loader), 10):
+                    break
                 
-                # Forward pass
+                # Forward e backward pass
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
                 self.optimizer.zero_grad()
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
-                
-                # Backward and optimize
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                
+                # Update weights
+                for param in self.model.parameters():
+                    param.grad.data.clamp_(-1, 1)  # Gradient clipping
                 self.optimizer.step()
                 
                 train_loss += loss.item()
                 batch_count += 1
+                
+                # Invia evento per il batch
+                if batch_idx % max(1, int(len(self.train_loader) / 10)) == 0:  # Ogni 10% dei batch
+                    self.add_event('batch_complete', {
+                        'batch': batch_idx + 1,
+                        'total_batches': len(self.train_loader),
+                        'loss': loss.item(),
+                        'epoch': epoch
+                    })
             
-            # Calcola la perdita media di addestramento
-            avg_train_loss = train_loss / batch_count if batch_count > 0 else 0
+            # Calcola loss media
+            train_loss = train_loss / batch_count if batch_count > 0 else float('inf')
+            self.train_loss = train_loss
             
             # Validation
             self.model.eval()
@@ -231,9 +284,9 @@ class TrainingSession:
             val_batch_count = 0
             
             with torch.no_grad():
-                for inputs, targets in self.val_loader:
-                    # Controlla di nuovo per l'interruzione
-                    if self.is_stopped:
+                for batch_idx, (inputs, targets) in enumerate(self.val_loader):
+                    # Limita i batch in demo mode
+                    if self.demo_mode and batch_idx >= min(len(self.val_loader), 5):
                         break
                     
                     inputs, targets = inputs.to(self.device), targets.to(self.device)
@@ -242,90 +295,81 @@ class TrainingSession:
                     val_loss += loss.item()
                     val_batch_count += 1
             
-            # Calcola la perdita media di validazione
-            avg_val_loss = val_loss / val_batch_count if val_batch_count > 0 else 0
+            # Calcola loss media
+            val_loss = val_loss / val_batch_count if val_batch_count > 0 else float('inf')
+            self.val_loss = val_loss
             
-            # Aggiorna lo stato
-            self.current_epoch = epoch
-            self.train_loss = avg_train_loss
-            self.val_loss = avg_val_loss
-            
-            # Aggiungi alla history
-            self.history['loss'].append(avg_train_loss)
-            self.history['val_loss'].append(avg_val_loss)
-            
-            # Salva il miglior modello
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
+            # Traccia il miglior modello
+            if val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
                 best_model_state = self.model.state_dict().copy()
-            
-            # Calcola il tempo trascorso e rimanente
-            elapsed_time = time.time() - self.start_time
-            if epoch > 1:
-                avg_time_per_epoch = elapsed_time / epoch
-                estimated_remaining_time = avg_time_per_epoch * (self.epochs - epoch)
+                self.early_stopping_counter = 0
             else:
-                estimated_remaining_time = None
+                self.early_stopping_counter += 1
             
-            # Prepara i dati dell'aggiornamento
-            update_data = {
+            # Invia evento di completamento epoca
+            self.add_event('epoch_complete', {
                 'epoch': epoch,
-                'total_epochs': self.epochs,
-                'train_loss': avg_train_loss,
-                'val_loss': avg_val_loss,
-                'elapsed_time': elapsed_time,
-                'estimated_remaining_time': estimated_remaining_time
-            }
+                'total_epochs': max_epochs,
+                'loss': train_loss,
+                'val_loss': val_loss,
+                'elapsed_time': time.time() - self.start_time
+            })
             
-            # A intervalli regolari, calcola metriche più dettagliate
-            if epoch % 3 == 0 or epoch == self.epochs:
-                # Qui potresti calcolare metriche reali sul set di test
-                # Per ora, utilizziamo solo perdite come metriche
-                self.metrics = {
-                    'mse': avg_val_loss,
-                    'rmse': math.sqrt(avg_val_loss),
-                    'mae': avg_val_loss * 0.8,  # Approssimazione
-                    'r2': max(0, 1 - (avg_val_loss / 0.5))  # Approssimazione
-                }
-                update_data['metrics'] = self.metrics
-            
-            # Invia l'aggiornamento
-            self.add_event('epoch_update', update_data)
+            # Early stopping
+            if self.early_stopping_counter >= self.early_stopping_patience:
+                logger.debug(f"Early stopping attivato all'epoca {epoch}")
+                self.add_event('early_stopping', {
+                    'message': f'Early stopping attivato dopo {epoch} epoche',
+                    'best_val_loss': self.best_val_loss
+                })
+                break
         
         # Carica il miglior modello
-        if best_model_state:
-            self.model.load_state_dict(best_model_state)
+        self.model.load_state_dict(best_model_state)
         
-        # Addestramento completato
-        self.status = 'completed'
-        self.end_time = time.time()
-        
-        completion_data = {
-            'total_time': self.end_time - self.start_time,
-            'final_loss': self.train_loss,
-            'metrics': self.metrics
+        # Salva risultati finali nelle metriche
+        self.metrics = {
+            'final_train_loss': self.train_loss,
+            'best_val_loss': self.best_val_loss,
+            'epochs_completed': self.current_epoch,
+            'total_time': time.time() - self.start_time
         }
-        
-        self.add_event('training_complete', completion_data)
-        logger.debug(f"Addestramento reale {self.training_id} completato")
     
     def stop(self):
         """Ferma l'addestramento"""
-        self.is_stopped = True
-        return True
+        if self.status == 'running':
+            self.stop_event.set()
+            self.status = 'stopped'
+            self.end_time = time.time()
+            self.add_event('training_stopped', {
+                'message': 'Addestramento interrotto manualmente',
+                'elapsed_time': self.end_time - self.start_time
+            })
+            logger.debug(f"Addestramento interrotto per sessione {self.training_id}")
+            return True
+        return False
     
     def add_event(self, event_type, data):
         """Aggiunge un evento alla coda"""
+        timestamp = time.time()
+        self.latest_timestamp = timestamp
+        
         event = {
+            'timestamp': timestamp,
             'type': event_type,
-            'data': data,
-            'timestamp': time.time()
+            'data': data
         }
+        
         self.events.append(event)
+        
+        # Limita la dimensione della coda
+        while len(self.events) > 1000:
+            self.events.popleft()
     
     def get_events(self, since=0):
         """Ottiene gli eventi dalla coda dopo un certo timestamp"""
-        return [e for e in self.events if e['timestamp'] > since]
+        return [event for event in self.events if event['timestamp'] > since]
     
     def to_dict(self):
         """Converte la sessione in un dizionario"""
@@ -343,7 +387,8 @@ class TrainingSession:
             'demo_mode': self.demo_mode,
             'status': self.status,
             'current_epoch': self.current_epoch,
-            'total_epochs': self.epochs,
+            'train_loss': self.train_loss,
+            'val_loss': self.val_loss,
             'start_time': self.start_time,
             'end_time': self.end_time
         }
@@ -355,20 +400,31 @@ def create_training_session(model_type, model_name, dataset_id, dataset_name,
     """Crea una nuova sessione di addestramento"""
     training_id = str(uuid.uuid4())
     
-    with training_lock:
-        session = TrainingSession(
-            training_id, model_type, model_name, dataset_id, dataset_name,
-            epochs, batch_size, lookback, learning_rate, device, demo_mode
-        )
-        active_trainings[training_id] = session
+    # Crea una nuova sessione
+    session = TrainingSession(
+        training_id=training_id,
+        model_type=model_type,
+        model_name=model_name,
+        dataset_id=dataset_id,
+        dataset_name=dataset_name,
+        epochs=epochs,
+        batch_size=batch_size,
+        lookback=lookback,
+        learning_rate=learning_rate,
+        device=device,
+        demo_mode=demo_mode
+    )
     
+    # Salva la sessione nel dizionario globale
+    active_sessions[training_id] = session
+    
+    logger.debug(f"Creata nuova sessione di addestramento: {training_id}")
     return training_id, session
 
 
 def get_training_session(training_id):
     """Ottiene una sessione di addestramento esistente"""
-    with training_lock:
-        return active_trainings.get(training_id)
+    return active_sessions.get(training_id)
 
 
 def start_training(training_id, model=None, train_loader=None, val_loader=None, 
@@ -376,6 +432,7 @@ def start_training(training_id, model=None, train_loader=None, val_loader=None,
     """Avvia una sessione di addestramento esistente"""
     session = get_training_session(training_id)
     if not session:
+        logger.warning(f"Sessione di addestramento non trovata: {training_id}")
         return False
     
     return session.start(model, train_loader, val_loader, criterion, optimizer)
@@ -385,6 +442,7 @@ def stop_training(training_id):
     """Ferma una sessione di addestramento"""
     session = get_training_session(training_id)
     if not session:
+        logger.warning(f"Sessione di addestramento non trovata: {training_id}")
         return False
     
     return session.stop()
@@ -392,20 +450,19 @@ def stop_training(training_id):
 
 def clean_completed_sessions(max_age=3600):  # 1 ora di default
     """Pulisce le sessioni completate più vecchie di max_age secondi"""
-    current_time = time.time()
+    now = time.time()
+    sessions_to_remove = []
     
-    with training_lock:
-        to_remove = []
-        
-        for training_id, session in active_trainings.items():
-            if session.status in ['completed', 'error', 'stopped'] and session.end_time:
-                if current_time - session.end_time > max_age:
-                    to_remove.append(training_id)
-        
-        for training_id in to_remove:
-            del active_trainings[training_id]
+    for training_id, session in active_sessions.items():
+        if session.status in ['completed', 'error', 'stopped']:
+            if session.end_time and now - session.end_time > max_age:
+                sessions_to_remove.append(training_id)
     
-    return len(to_remove)
+    for training_id in sessions_to_remove:
+        del active_sessions[training_id]
+    
+    logger.debug(f"Pulite {len(sessions_to_remove)} sessioni completate")
+    return len(sessions_to_remove)
 
 
 def get_training_events(training_id, since=0):
@@ -419,5 +476,4 @@ def get_training_events(training_id, since=0):
 
 def get_all_training_sessions():
     """Ottiene tutte le sessioni di addestramento attive"""
-    with training_lock:
-        return {k: v.to_dict() for k, v in active_trainings.items()}
+    return {training_id: session.to_dict() for training_id, session in active_sessions.items()}
