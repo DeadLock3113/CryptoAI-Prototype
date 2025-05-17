@@ -1829,12 +1829,26 @@ def models():
             loss_chart_data = base64.b64encode(loss_buffer.getvalue()).decode('utf-8')
             plt.close()
             
-            # Save model
+            # Save model (PyTorch version)
             import os
+            import torch
             model_dir = os.path.join(os.getcwd(), 'models/saved')
             os.makedirs(model_dir, exist_ok=True)
-            model_path = os.path.join(model_dir, f"{selected_dataset.symbol}_{model_type}_{lookback}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5")
-            model.save(model_path)
+            model_path = os.path.join(model_dir, f"{selected_dataset.symbol}_{model_type}_{lookback}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt")
+            
+            # Salvataggio specifico per PyTorch
+            try:
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scaler': scaler,
+                    'loss': best_val_loss
+                }, model_path)
+                logger.debug(f"Modello salvato con successo in: {model_path}")
+            except Exception as e:
+                logger.error(f"Errore nel salvataggio del modello: {str(e)}")
+                # Continuiamo anche se il salvataggio fallisce
+                flash(f"Avviso: Impossibile salvare il modello. {str(e)}", 'warning')
             
             # Prepare results
             results = {
