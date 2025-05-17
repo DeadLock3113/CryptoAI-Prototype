@@ -5,27 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}CryptoTradeAnalyzer{% endblock %}</title>
     
-    <!-- Bootstrap CSS -->
+    <!-- Precaricamento risorse critiche -->
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    
+    <!-- Bootstrap CSS con caricamento ottimizzato -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
-    <!-- Custom CSS -->
+    <!-- Custom CSS ottimizzato con priorità di rendering -->
     <style>
-        /* Custom styles */
+        /* Stili critici per rendering iniziale */
         body {
             padding-top: 56px;
             background-color: #f5f5f5;
+            font-display: swap;
         }
         
         .navbar-brand {
             font-weight: bold;
         }
         
+        /* Loader per il cambio di pagina */
+        .page-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(to right, #0d6efd, #0dcaf0);
+            z-index: 9999;
+            transform-origin: left;
+            visibility: hidden;
+        }
+        
+        .loading .page-loader {
+            visibility: visible;
+            animation: loading 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes loading {
+            0% { transform: scaleX(0); }
+            50% { transform: scaleX(0.5); }
+            100% { transform: scaleX(1); opacity: 0; }
+        }
+        
+        /* Ottimizzazioni per il rendering */
         .chart-container {
             background-color: white;
             padding: 20px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
+            contain: content; /* Migliora performance */
         }
         
         .login-container, .register-container {
@@ -44,11 +75,12 @@
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             padding: 20px;
             margin-bottom: 20px;
-            transition: transform 0.3s;
+            transition: transform 0.2s; /* Transizione più veloce */
+            contain: content; /* Migliora performance */
         }
         
         .dashboard-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-3px); /* Ridotto movimento per prestazioni migliori */
         }
         
         .dashboard-card-header {
@@ -69,7 +101,52 @@
             background-color: #343a40;
             color: white;
         }
+        
+        /* Ottimizzazioni per tabelle e grafici */
+        .table-responsive {
+            contain: content;
+        }
+        
+        img, canvas {
+            content-visibility: auto;
+        }
     </style>
+    
+    <!-- Script loader per migliorare velocità percepita -->
+    <script>
+        // Controllo per mostrare l'indicatore di caricamento
+        document.addEventListener('DOMContentLoaded', function() {
+            const loader = document.createElement('div');
+            loader.className = 'page-loader';
+            document.body.appendChild(loader);
+            
+            // Intercetta i clic sui link per mostrare l'indicatore di caricamento
+            document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && !e.target.getAttribute('target') && e.target.href) {
+                    document.body.classList.add('loading');
+                }
+            });
+            
+            // Caricamento lazy di script non critici
+            function loadScriptAsync(url) {
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = url;
+                    script.async = true;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.body.appendChild(script);
+                });
+            }
+            
+            // Pre-caricamento di script comuni dopo il rendering iniziale
+            setTimeout(function() {
+                if (document.querySelector('.chart-container')) {
+                    loadScriptAsync('https://cdn.jsdelivr.net/npm/chart.js');
+                }
+            }, 100);
+        });
+    </script>
     
     {% block head %}{% endblock %}
 </head>

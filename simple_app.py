@@ -45,6 +45,9 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Initialize database
 db = SQLAlchemy(app)
 
+# Cache in-memory per migliorare le performance
+_memory_cache = {}
+
 # Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
