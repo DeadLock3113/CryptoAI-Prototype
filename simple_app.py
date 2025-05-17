@@ -201,7 +201,7 @@ def generate_price_chart(data, symbol, resolution='full'):
         # Save plot to buffer with optimized settings
         buffer = io.BytesIO()
         plt.savefig(buffer, format='png', dpi=dpi, bbox_inches='tight', 
-                   optimize=True, transparent=False)
+                   transparent=False)
         buffer.seek(0)
         
         # Convert plot to base64 with optimized compression
@@ -901,8 +901,7 @@ def indicators():
                         dpi = 100  # DPI standard per dataset normali
                     
                     plt.savefig(buffer, format='png', dpi=dpi, 
-                               bbox_inches='tight', pad_inches=0.1,
-                               optimize=True)
+                               bbox_inches='tight', pad_inches=0.1)
                     buffer.seek(0)
                     
                     # Convert plot to base64 for embedding in HTML
