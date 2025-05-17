@@ -600,9 +600,75 @@
             }
         });
         
-        const eventSource = new EventSource('/training-progress/{{ training_id }}');
+        // Inizializziamo l'EventSource con modalità di riconnessione migliorata
+        let eventSource;
+        let isConnected = false;
+        let connectionAttempts = 0;
+        const maxConnectionAttempts = 3;
         
-        eventSource.addEventListener('epoch_update', function(e) {
+        function initEventSource() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            // Aggiorniamo lo stato della UI
+            document.getElementById('training-status').textContent = 'Connessione al server di addestramento in corso...';
+            
+            // Creiamo una nuova connessione EventSource
+            eventSource = new EventSource('/training-progress/{{ training_id }}');
+            
+            // Gestione dell'apertura di connessione
+            eventSource.addEventListener('open', function(e) {
+                isConnected = true;
+                connectionAttempts = 0;
+                console.log('Connessione SSE stabilita');
+                document.getElementById('training-status').textContent = 'Connesso al server. Inizializzazione...';
+            });
+            
+            // Gestione errori di connessione
+            eventSource.addEventListener('error', function(e) {
+                console.error('Errore nella connessione SSE:', e);
+                isConnected = false;
+                
+                if (connectionAttempts < maxConnectionAttempts) {
+                    connectionAttempts++;
+                    document.getElementById('training-status').textContent = 
+                        `Errore di connessione. Tentativo di riconnessione ${connectionAttempts}/${maxConnectionAttempts}...`;
+                    
+                    // Ritenta dopo un breve ritardo
+                    setTimeout(initEventSource, 2000);
+                } else {
+                    document.getElementById('training-status').textContent = 
+                        'Impossibile stabilire la connessione. Ricarica la pagina per riprovare.';
+                }
+            });
+            
+            // Gestione evento di heartbeat per mantenere viva la connessione
+            eventSource.addEventListener('heartbeat', function(e) {
+                console.log('Heartbeat ricevuto');
+                document.getElementById('training-status').textContent = 'Addestramento in corso...';
+            });
+            
+            // Gestione dell'evento di connessione stabilita
+            eventSource.addEventListener('connection_established', function(e) {
+                console.log('Connessione confermata dal server');
+                document.getElementById('training-status').textContent = 'Avvio addestramento...';
+            });
+            
+            // Gestione dell'evento di avvio dell'addestramento
+            eventSource.addEventListener('training_started', function(e) {
+                const data = JSON.parse(e.data);
+                console.log('Addestramento avviato:', data);
+                document.getElementById('training-status').textContent = 'Addestramento avviato';
+                appendToLog('Addestramento avviato: ' + data.message);
+            });
+        }
+        
+        // Inizializza la connessione
+        initEventSource();
+        
+        // Gestione aggiornamenti epoche
+        eventSource.addEventListener('epoch_complete', function(e) {
             const data = JSON.parse(e.data);
             // Utilizziamo la funzione animata per aggiornare i valori
             if (window.TrainingVisualizer && window.TrainingVisualizer.updateRealTimeMetrics) {
