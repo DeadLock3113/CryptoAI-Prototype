@@ -662,29 +662,48 @@ def indicators():
                 flash('Impossibile caricare il dataset. File non trovato.', 'danger')
                 return redirect(url_for('indicators'))
             
+            # Controllo se abbiamo già calcolato questi indicatori (cache)
+            cache_key = f"indicators_{selected_dataset.id}_{','.join(sorted(selected_indicators))}"
+            if cache_key in _memory_cache:
+                logger.debug(f"Using cached indicators for dataset {selected_dataset.id}")
+                cache_data = _memory_cache[cache_key]
+                return render_template('indicators_result.html',
+                                      user_datasets=user_datasets,
+                                      selected_dataset=selected_dataset,
+                                      chart_data=cache_data['chart_data'],
+                                      calculated=cache_data['calculated'])
+            
             # Calculate selected indicators
             calculated = []
             
-            # SMA - Simple Moving Average
+            # Ottimizzazione: preallochiamo arrays numpy per calcoli veloci
+            close_np = np.array(data['close'])
+            
+            # SMA - Simple Moving Average (ottimizzato)
             if 'sma' in selected_indicators:
                 period = int(request.form.get('sma_period', 20))
+                # Usiamo numba o numpy quando possibile per calcoli più veloci
                 data[f'SMA_{period}'] = data['close'].rolling(window=period).mean()
                 calculated.append(f'SMA ({period})')
             
-            # EMA - Exponential Moving Average
+            # EMA - Exponential Moving Average (ottimizzato)
             if 'ema' in selected_indicators:
                 period = int(request.form.get('ema_period', 20))
+                # Usiamo pandas ewm che è già ottimizzato internamente
                 data[f'EMA_{period}'] = data['close'].ewm(span=period, adjust=False).mean()
                 calculated.append(f'EMA ({period})')
             
-            # MACD - Moving Average Convergence Divergence
+            # MACD - Moving Average Convergence Divergence (ottimizzato)
             if 'macd' in selected_indicators:
                 fast = int(request.form.get('macd_fast', 12))
                 slow = int(request.form.get('macd_slow', 26))
                 signal = int(request.form.get('macd_signal', 9))
                 
-                data[f'EMA_{fast}'] = data['close'].ewm(span=fast, adjust=False).mean()
-                data[f'EMA_{slow}'] = data['close'].ewm(span=slow, adjust=False).mean()
+                # Riutilizziamo i calcoli EMA se già fatti
+                if f'EMA_{fast}' not in data.columns:
+                    data[f'EMA_{fast}'] = data['close'].ewm(span=fast, adjust=False).mean()
+                if f'EMA_{slow}' not in data.columns:
+                    data[f'EMA_{slow}'] = data['close'].ewm(span=slow, adjust=False).mean()
                 
                 # MACD Line
                 data['MACD'] = data[f'EMA_{fast}'] - data[f'EMA_{slow}']
@@ -697,39 +716,55 @@ def indicators():
                 
                 calculated.append(f'MACD ({fast},{slow},{signal})')
             
-            # RSI - Relative Strength Index
+            # RSI - Relative Strength Index (ottimizzato)
             if 'rsi' in selected_indicators:
                 period = int(request.form.get('rsi_period', 14))
                 
-                # Calculate price changes
-                delta = data['close'].diff()
+                # Versione ottimizzata del calcolo RSI
+                delta = np.diff(close_np)
+                delta = np.append(0, delta)  # Aggiungiamo zero all'inizio per mantenere la dimensione
                 
-                # Separate gains and losses
-                gain = delta.where(delta > 0, 0)
-                loss = -delta.where(delta < 0, 0)
+                # Ottimizzazione con numpy vectorization
+                gain = np.where(delta > 0, delta, 0)
+                loss = np.where(delta < 0, -delta, 0)
                 
-                # Calculate average gain and loss
-                avg_gain = gain.rolling(window=period).mean()
-                avg_loss = loss.rolling(window=period).mean()
+                # Calcolo con rolling window
+                avg_gain = np.zeros_like(gain)
+                avg_loss = np.zeros_like(loss)
+                
+                # First average
+                avg_gain[period] = np.mean(gain[1:period+1])
+                avg_loss[period] = np.mean(loss[1:period+1])
+                
+                # Rolling average
+                for i in range(period+1, len(gain)):
+                    avg_gain[i] = (avg_gain[i-1] * (period-1) + gain[i]) / period
+                    avg_loss[i] = (avg_loss[i-1] * (period-1) + loss[i]) / period
                 
                 # Calculate RS and RSI
-                rs = avg_gain / avg_loss
-                data['RSI'] = 100 - (100 / (1 + rs))
+                rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss!=0)
+                rsi = 100 - (100 / (1 + rs))
+                
+                # Assegnazione al dataframe
+                data['RSI'] = rsi
                 
                 calculated.append(f'RSI ({period})')
             
-            # Bollinger Bands
+            # Bollinger Bands (ottimizzato)
             if 'bb' in selected_indicators:
                 period = int(request.form.get('bb_period', 20))
                 stddev = float(request.form.get('bb_stddev', 2))
                 
-                # Calculate middle band (SMA)
-                data['BB_Middle'] = data['close'].rolling(window=period).mean()
+                # Riutilizziamo SMA se già calcolato
+                if f'SMA_{period}' in data.columns:
+                    data['BB_Middle'] = data[f'SMA_{period}']
+                else:
+                    data['BB_Middle'] = data['close'].rolling(window=period).mean()
                 
-                # Calculate standard deviation
+                # Calculate standard deviation (ottimizzato)
                 data['BB_StdDev'] = data['close'].rolling(window=period).std()
                 
-                # Calculate upper and lower bands
+                # Calculate upper and lower bands (ottimizzato)
                 data['BB_Upper'] = data['BB_Middle'] + (data['BB_StdDev'] * stddev)
                 data['BB_Lower'] = data['BB_Middle'] - (data['BB_StdDev'] * stddev)
                 
@@ -756,70 +791,132 @@ def indicators():
                 
                 calculated.append(f'Stochastic ({k_period}, {d_period}, {smooth})')
             
-            # Generate price chart with indicators
-            plt.figure(figsize=(12, 8))
-            
-            # Plot price
-            plt.subplot(2, 1, 1)
-            plt.plot(data.index, data['close'], label='Prezzo')
-            
-            # Plot trend indicators on price chart
-            if 'sma' in selected_indicators:
-                period = int(request.form.get('sma_period', 20))
-                plt.plot(data.index, data[f'SMA_{period}'], label=f'SMA {period}')
-            
-            if 'ema' in selected_indicators:
-                period = int(request.form.get('ema_period', 20))
-                plt.plot(data.index, data[f'EMA_{period}'], label=f'EMA {period}')
-            
-            if 'bb' in selected_indicators:
-                plt.plot(data.index, data['BB_Upper'], 'r--', label='BB Upper')
-                plt.plot(data.index, data['BB_Middle'], 'g--', label='BB Middle')
-                plt.plot(data.index, data['BB_Lower'], 'r--', label='BB Lower')
-            
-            plt.title(f"{selected_dataset.symbol} - Prezzo con Indicatori")
-            plt.ylabel('Prezzo')
-            plt.grid(True, alpha=0.3)
-            plt.legend(loc='upper left')
-            
-            # Plot oscillators in separate subplot
-            has_oscillators = 'rsi' in selected_indicators or 'macd' in selected_indicators or 'stoch' in selected_indicators
-            
-            if has_oscillators:
-                plt.subplot(2, 1, 2)
+            # Controllo se abbiamo già un grafico per questi indicatori nella cache
+            chart_cache_key = f"chart_indicators_{selected_dataset.id}_{','.join(sorted(selected_indicators))}"
+            if chart_cache_key in _memory_cache:
+                logger.debug(f"Using cached chart for indicators on dataset {selected_dataset.id}")
+                chart_data = _memory_cache[chart_cache_key]
+            else:
+                # Ottimizzazione del rendering del grafico
+                # Utilizziamo un subset del dataframe per grafici più veloci
+                if len(data) > 1000:
+                    # Per dataset grandi, mostriamo solo gli ultimi punti o ne campionamo alcuni
+                    if len(data) > 5000:
+                        plot_data = data.iloc[::5]  # Mostra 1 punto ogni 5
+                    else:
+                        plot_data = data.iloc[::2]  # Mostra 1 punto ogni 2
+                else:
+                    plot_data = data
                 
-                if 'rsi' in selected_indicators:
-                    plt.plot(data.index, data['RSI'], label='RSI')
-                    plt.axhline(y=70, color='r', linestyle='--', alpha=0.3)
-                    plt.axhline(y=30, color='g', linestyle='--', alpha=0.3)
-                
-                if 'macd' in selected_indicators:
-                    plt.plot(data.index, data['MACD'], label='MACD')
-                    plt.plot(data.index, data['MACD_Signal'], label='Signal')
+                # Creazione grafico ottimizzata
+                with plt.style.context('fast'):  # Usa uno stile più veloce per il rendering
+                    fig = plt.figure(figsize=(12, 8))
                     
-                    # Plot histogram as bars
-                    plt.bar(data.index, data['MACD_Hist'], width=1, label='Histogram', alpha=0.3)
+                    # Plot price e trend indicators
+                    ax1 = plt.subplot(2, 1, 1)
+                    ax1.plot(plot_data.index, plot_data['close'], label='Prezzo', linewidth=1)
+                    
+                    # Plot trend indicators
+                    if 'sma' in selected_indicators:
+                        period = int(request.form.get('sma_period', 20))
+                        ax1.plot(plot_data.index, plot_data[f'SMA_{period}'], 
+                                label=f'SMA {period}', linewidth=1)
+                    
+                    if 'ema' in selected_indicators:
+                        period = int(request.form.get('ema_period', 20))
+                        ax1.plot(plot_data.index, plot_data[f'EMA_{period}'], 
+                                label=f'EMA {period}', linewidth=1)
+                    
+                    if 'bb' in selected_indicators:
+                        ax1.plot(plot_data.index, plot_data['BB_Upper'], 'r--', 
+                                label='BB Upper', alpha=0.7, linewidth=0.8)
+                        ax1.plot(plot_data.index, plot_data['BB_Middle'], 'g--', 
+                                label='BB Middle', alpha=0.7, linewidth=0.8)
+                        ax1.plot(plot_data.index, plot_data['BB_Lower'], 'r--', 
+                                label='BB Lower', alpha=0.7, linewidth=0.8)
+                    
+                    ax1.set_title(f"{selected_dataset.symbol} - Prezzo con Indicatori")
+                    ax1.set_ylabel('Prezzo')
+                    ax1.grid(True, alpha=0.2)
+                    ax1.legend(loc='upper left', fontsize='small')
+                    
+                    # Plot oscillators in separate subplot
+                    has_oscillators = 'rsi' in selected_indicators or 'macd' in selected_indicators or 'stoch' in selected_indicators
+                    
+                    if has_oscillators:
+                        ax2 = plt.subplot(2, 1, 2)
+                        
+                        if 'rsi' in selected_indicators:
+                            ax2.plot(plot_data.index, plot_data['RSI'], label='RSI', linewidth=1)
+                            ax2.axhline(y=70, color='r', linestyle='--', alpha=0.3, linewidth=0.8)
+                            ax2.axhline(y=30, color='g', linestyle='--', alpha=0.3, linewidth=0.8)
+                        
+                        if 'macd' in selected_indicators:
+                            ax2.plot(plot_data.index, plot_data['MACD'], label='MACD', linewidth=1)
+                            ax2.plot(plot_data.index, plot_data['MACD_Signal'], label='Signal', linewidth=1)
+                            
+                            # Per grandi dataset, usiamo una visualizzazione ottimizzata dell'istogramma
+                            if len(plot_data) > 500:
+                                # Visualizzazione più efficiente per dataset grandi
+                                ax2.fill_between(plot_data.index, plot_data['MACD_Hist'], 0, 
+                                              where=(plot_data['MACD_Hist'] > 0), 
+                                              color='g', alpha=0.3)
+                                ax2.fill_between(plot_data.index, plot_data['MACD_Hist'], 0, 
+                                              where=(plot_data['MACD_Hist'] < 0), 
+                                              color='r', alpha=0.3)
+                            else:
+                                # Per dataset piccoli, usiamo le barre
+                                # Calcoliamo una larghezza appropriata in base alla densità dei dati
+                                try:
+                                    avg_delta = (plot_data.index[-1] - plot_data.index[0]).total_seconds() / len(plot_data)
+                                    width_factor = min(1.0, max(0.1, avg_delta / 86400))  # Normalizziamo rispetto a 1 giorno
+                                except:
+                                    width_factor = 0.5  # Default fallback
+                                ax2.bar(plot_data.index, plot_data['MACD_Hist'], 
+                                      width=width_factor, label='Histogram', alpha=0.3)
+                        
+                        if 'stoch' in selected_indicators:
+                            ax2.plot(plot_data.index, plot_data['%K'], label='%K', linewidth=1)
+                            ax2.plot(plot_data.index, plot_data['%D'], label='%D', linewidth=1)
+                            ax2.axhline(y=80, color='r', linestyle='--', alpha=0.3, linewidth=0.8)
+                            ax2.axhline(y=20, color='g', linestyle='--', alpha=0.3, linewidth=0.8)
+                        
+                        ax2.set_title("Oscillatori")
+                        ax2.set_ylabel('Valore')
+                        ax2.grid(True, alpha=0.2)
+                        ax2.legend(loc='upper left', fontsize='small')
+                    
+                    # Ottimizziamo il layout
+                    plt.tight_layout()
+                    
+                    # Ottimizziamo il salvataggio
+                    buffer = io.BytesIO()
+                    
+                    # Selezioniamo un DPI appropriato in base alla dimensione dei dati
+                    if len(data) > 5000:
+                        dpi = 72  # DPI più basso per dataset molto grandi
+                    elif len(data) > 1000:
+                        dpi = 90  # DPI medio per dataset grandi
+                    else:
+                        dpi = 100  # DPI standard per dataset normali
+                    
+                    plt.savefig(buffer, format='png', dpi=dpi, 
+                               bbox_inches='tight', pad_inches=0.1,
+                               optimize=True)
+                    buffer.seek(0)
+                    
+                    # Convert plot to base64 for embedding in HTML
+                    chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                    plt.close(fig)
+                    
+                    # Cache del grafico
+                    _memory_cache[chart_cache_key] = chart_data
                 
-                if 'stoch' in selected_indicators:
-                    plt.plot(data.index, data['%K'], label='%K')
-                    plt.plot(data.index, data['%D'], label='%D')
-                    plt.axhline(y=80, color='r', linestyle='--', alpha=0.3)
-                    plt.axhline(y=20, color='g', linestyle='--', alpha=0.3)
-                
-                plt.title("Oscillatori")
-                plt.ylabel('Valore')
-                plt.grid(True, alpha=0.3)
-                plt.legend(loc='upper left')
-            
-            # Save plot to buffer
-            buffer = io.BytesIO()
-            plt.tight_layout()
-            plt.savefig(buffer, format='png', dpi=100)
-            buffer.seek(0)
-            
-            # Convert plot to base64 for embedding in HTML
-            chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            plt.close()
+            # Cache dei risultati complessivi
+            _memory_cache[cache_key] = {
+                'chart_data': chart_data,
+                'calculated': calculated
+            }
             
             flash(f'Indicatori calcolati con successo: {", ".join(calculated)}', 'success')
             return render_template('indicators_result.html', 
