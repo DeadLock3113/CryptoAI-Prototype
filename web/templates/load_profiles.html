@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %}Carica Profilo API{% endblock %}
+
+{% block page_header %}Carica Profilo API{% endblock %}
+
+{% block page_description %}
+Seleziona un profilo API salvato per caricarlo nel tuo account
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Profili API Salvati</h5>
+            </div>
+            <div class="card-body">
+                {% if profiles %}
+                    <div class="list-group">
+                        {% for profile in profiles %}
+                            <a href="{{ url_for('load_profile', profile_id=profile.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ profile.name }}</h6>
+                                    <small class="text-muted">Creato il: {{ profile.created_at.strftime('%d/%m/%Y %H:%M') }}</small>
+                                </div>
+                                <span class="badge bg-primary rounded-pill">
+                                    <i class="fas fa-arrow-right"></i>
+                                </span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Non hai ancora salvato nessun profilo API.
+                    </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('profile') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>
+                    Torna al Profilo
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

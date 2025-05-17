@@ -3228,7 +3228,7 @@ def send_price_notification(symbol, alert_type):
 
 @app.route('/api/save-profile', methods=['POST'])
 def save_api_profile():
-    """Salva un profilo di API keys"""
+    """Salva un profilo di API keys (API JSON)"""
     # Verifica che l'utente sia loggato
     user = get_current_user()
     if not user:
@@ -3271,6 +3271,59 @@ def save_api_profile():
     except Exception as e:
         logger.error(f"Errore nel salvataggio del profilo API: {str(e)}")
         return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
+@app.route('/api/save-profile-form', methods=['POST'])
+def save_api_profile_form():
+    """Salva un profilo API tramite form normale (non AJAX)"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Utente non autenticato', 'danger')
+        return redirect(url_for('profile'))
+    
+    try:
+        profile_name = request.form.get('profile_name', '').strip()
+        profile_data_str = request.form.get('profile_data', '{}')
+        
+        if not profile_name:
+            flash('Nome profilo non valido', 'danger')
+            return redirect(url_for('profile'))
+        
+        try:
+            profile_data = json.loads(profile_data_str)
+        except:
+            flash('Errore nella formattazione dei dati del profilo', 'danger')
+            return redirect(url_for('profile'))
+        
+        # Verifica se esiste già un profilo con questo nome
+        existing_profile = ApiProfile.query.filter_by(
+            user_id=user.id, 
+            name=profile_name
+        ).first()
+        
+        if existing_profile:
+            # Aggiorna il profilo esistente
+            existing_profile.data = profile_data
+            existing_profile.created_at = datetime.utcnow()
+            db.session.commit()
+            flash(f'Profilo "{profile_name}" aggiornato con successo', 'success')
+        else:
+            # Crea un nuovo profilo
+            new_profile = ApiProfile(
+                name=profile_name,
+                data=profile_data,
+                user_id=user.id
+            )
+            db.session.add(new_profile)
+            db.session.commit()
+            flash(f'Profilo "{profile_name}" salvato con successo', 'success')
+        
+        return redirect(url_for('profile'))
+    
+    except Exception as e:
+        logger.error(f"Errore nel salvataggio del profilo API: {str(e)}")
+        flash(f'Errore nel salvataggio del profilo: {str(e)}', 'danger')
+        return redirect(url_for('profile'))
 
 
 @app.route('/api/get-profiles', methods=['GET'])
@@ -3323,6 +3376,69 @@ def get_api_profile(profile_id):
     except Exception as e:
         logger.error(f"Errore nel recupero del profilo API: {str(e)}")
         return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
+
+
+@app.route('/load-api-profile', methods=['GET'])
+def load_api_profiles():
+    """Pagina di selezione profili API per caricamento"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'danger')
+        return redirect(url_for('login'))
+    
+    # Recupera tutti i profili dell'utente
+    profiles = ApiProfile.query.filter_by(user_id=user.id).order_by(ApiProfile.created_at.desc()).all()
+    
+    return render_template('load_profiles.html', 
+                          profiles=profiles, 
+                          current_user=user)
+
+
+@app.route('/load-profile/<int:profile_id>', methods=['GET'])
+def load_profile(profile_id):
+    """Carica un profilo API e reindirizza alla pagina del profilo"""
+    # Verifica che l'utente sia loggato
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'danger')
+        return redirect(url_for('login'))
+    
+    try:
+        # Verifica che il profilo esista e appartenga all'utente
+        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
+        
+        if not profile:
+            flash('Profilo non trovato o non hai i permessi per accedervi.', 'danger')
+            return redirect(url_for('profile'))
+        
+        # Estrai i dati del profilo
+        profile_data = profile.data
+        
+        # Aggiorna il profilo utente con questi dati
+        if 'binance_api_key' in profile_data:
+            user.binance_api_key = profile_data.get('binance_api_key')
+        if 'binance_api_secret' in profile_data:
+            user.binance_api_secret = profile_data.get('binance_api_secret')
+        if 'kraken_api_key' in profile_data:
+            user.kraken_api_key = profile_data.get('kraken_api_key')
+        if 'kraken_api_secret' in profile_data:
+            user.kraken_api_secret = profile_data.get('kraken_api_secret')
+        if 'telegram_bot_token' in profile_data:
+            user.telegram_bot_token = profile_data.get('telegram_bot_token')
+        if 'telegram_chat_id' in profile_data:
+            user.telegram_chat_id = profile_data.get('telegram_chat_id')
+        
+        # Salva le modifiche
+        db.session.commit()
+        
+        flash(f'Profilo "{profile.name}" caricato con successo!', 'success')
+        return redirect(url_for('profile'))
+    
+    except Exception as e:
+        logger.error(f"Errore nel caricamento del profilo: {str(e)}")
+        flash(f'Errore nel caricamento del profilo: {str(e)}', 'danger')
+        return redirect(url_for('profile'))
 
 
 @app.route('/api/delete-profile/<int:profile_id>', methods=['DELETE'])

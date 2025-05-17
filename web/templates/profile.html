@@ -62,28 +62,43 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                 });
             });
             
-            // Pulsanti per il pannello dei profili API
-            const apiProfilesContainer = document.querySelector('.api-profiles-container');
+            // Bottoni di gestione profili API
             const saveProfileBtn = document.getElementById('save-api-profile-btn');
-            const loadProfileBtn = document.getElementById('load-api-profile-btn');
-            const closeApiProfiles = document.getElementById('close-api-profiles');
-            const profileActions = document.getElementById('profile-actions');
             
-            // Mostra/Nascondi pannello profili
-            saveProfileBtn.addEventListener('click', function() {
-                apiProfilesContainer.style.display = 'block';
-                profileActions.style.display = 'block';
-                loadApiProfiles('save');
-            });
-            
-            loadProfileBtn.addEventListener('click', function() {
-                apiProfilesContainer.style.display = 'block';
-                profileActions.style.display = 'none';
-                loadApiProfiles('load');
-            });
-            
-            closeApiProfiles.addEventListener('click', function() {
-                apiProfilesContainer.style.display = 'none';
+            // Funzione che mostra una form semplice per salvare il profilo
+            saveProfileBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Mostra un popup per inserire il nome del profilo
+                const profileName = prompt('Inserisci un nome per il profilo:');
+                if (!profileName || profileName.trim() === '') {
+                    return; // Annullato o nome vuoto
+                }
+                
+                // Creiamo una copia nascosta della form per inviarla 
+                const originalForm = document.querySelector('form input[name="form_type"][value="api_settings"]').closest('form');
+                const formClone = originalForm.cloneNode(true);
+                
+                // Aggiungiamo i campi necessari alla form
+                const profileNameInput = document.createElement('input');
+                profileNameInput.type = 'hidden';
+                profileNameInput.name = 'profile_name';
+                profileNameInput.value = profileName.trim();
+                formClone.appendChild(profileNameInput);
+                
+                const formTypeInput = document.createElement('input');
+                formTypeInput.type = 'hidden';
+                formTypeInput.name = 'form_type';
+                formTypeInput.value = 'save_api_profile';
+                formClone.appendChild(formTypeInput);
+                
+                // Impostiamo l'action della form
+                formClone.action = '/api/save-profile-form';
+                formClone.style.display = 'none';
+                
+                // Aggiungiamo la form al body e la inviamo
+                document.body.appendChild(formClone);
+                formClone.submit();
             });
             
             // Salva nuovo profilo
@@ -306,37 +321,13 @@ Gestisci il tuo profilo e visualizza la tua attività recente
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h6 class="card-title mb-0">API Exchange</h6>
                         <div class="api-profiles-controls">
-                            <button type="button" class="btn btn-outline-success btn-sm me-2" id="save-api-profile-btn">
+                            <a href="#" class="btn btn-outline-success btn-sm me-2" id="save-api-profile-btn">
                                 <i class="fas fa-save me-1"></i> Salva Profilo
-                            </button>
-                            <button type="button" class="btn btn-outline-primary btn-sm" id="load-api-profile-btn">
+                            </a>
+                            <!-- Usa un link diretto alle API key salvate -->
+                            <a href="{{ url_for('load_api_profiles') }}" class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-folder-open me-1"></i> Carica Profilo
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="api-profiles-container mb-3" style="display: none;">
-                        <div class="card">
-                            <div class="card-header bg-dark text-white">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <h6 class="mb-0">Profili API Salvati</h6>
-                                    <button type="button" class="btn-close btn-close-white" id="close-api-profiles"></button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div id="api-profiles-list">
-                                    <!-- I profili salvati verranno caricati qui -->
-                                    <div class="text-center py-3" id="no-profiles-message">
-                                        <p class="text-muted mb-0">Nessun profilo API salvato.</p>
-                                    </div>
-                                </div>
-                                <div class="mt-3" id="profile-actions" style="display: none;">
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" id="new-profile-name" placeholder="Nome profilo...">
-                                        <button class="btn btn-success" type="button" id="save-new-profile">Salva</button>
-                                    </div>
-                                </div>
-                            </div>
+                            </a>
                         </div>
                     </div>
                     
