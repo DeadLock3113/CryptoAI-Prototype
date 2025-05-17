@@ -2027,7 +2027,7 @@ def models():
                 'rmse': rmse,
                 'mae': mae,
                 'r2': r2,
-                'trained_epochs': len(history.history['loss']),
+                'trained_epochs': len(history['loss']),
                 'model_path': model_path,
                 'gpu_used': gpu_available
             }
