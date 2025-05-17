@@ -1019,7 +1019,9 @@ dependencies = [
     { name = "pandas" },
     { name = "psycopg2-binary" },
     { name = "scikit-learn" },
+    { name = "sqlalchemy" },
     { name = "tensorflow" },
+    { name = "werkzeug" },
 ]
 
 [package.metadata]
@@ -1035,7 +1037,9 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.41" },
     { name = "tensorflow", specifier = ">=2.14.0" },
+    { name = "werkzeug", specifier = ">=3.1.3" },
 ]
 
 [[package]]

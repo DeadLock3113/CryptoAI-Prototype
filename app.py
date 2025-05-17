@@ -13,6 +13,8 @@ import logging
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -23,6 +25,9 @@ class Base(DeclarativeBase):
     pass
 
 db = SQLAlchemy(model_class=Base)
+
+# Initialize login manager
+login_manager = LoginManager()
 
 def create_app():
     """
@@ -62,16 +67,179 @@ def create_app():
     # Initialize the database with the app
     db.init_app(app)
     
+    # Initialize login manager with the app
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+    login_manager.login_message = 'Accedi per accedere a questa pagina'
+    login_manager.login_message_category = 'warning'
+    
     # Create all database tables
     with app.app_context():
         import models  # Import models to register them with SQLAlchemy
         db.create_all()
+    
+    # User loader function for Flask-Login
+    @login_manager.user_loader
+    def load_user(user_id):
+        # Import here to avoid circular imports
+        from models import User
+        return User.query.get(int(user_id))
     
     # Define routes
     @app.route('/')
     def index():
         """Home page"""
         return render_template('index.html')
+        
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        """Login page"""
+        # If user is already logged in, redirect to index
+        if current_user.is_authenticated:
+            return redirect(url_for('index'))
+            
+        if request.method == 'POST':
+            email = request.form['email']
+            password = request.form['password']
+            remember = 'remember' in request.form
+            
+            # Import here to avoid circular imports
+            from models import User
+            
+            # Find user by email
+            user = User.query.filter_by(email=email).first()
+            
+            # Check if user exists and password is correct
+            if user and check_password_hash(user.password_hash, password):
+                login_user(user, remember=remember)
+                flash('Login effettuato con successo!', 'success')
+                
+                # Redirect to next page or index
+                next_page = request.args.get('next')
+                return redirect(next_page or url_for('index'))
+            else:
+                flash('Login fallito. Controlla email e password.', 'danger')
+                
+        return render_template('login.html')
+        
+    @app.route('/logout')
+    @login_required
+    def logout():
+        """Logout user"""
+        logout_user()
+        flash('Logout effettuato con successo!', 'success')
+        return redirect(url_for('index'))
+        
+    @app.route('/register', methods=['GET', 'POST'])
+    def register():
+        """Register page"""
+        # If user is already logged in, redirect to index
+        if current_user.is_authenticated:
+            return redirect(url_for('index'))
+            
+        if request.method == 'POST':
+            username = request.form['username']
+            email = request.form['email']
+            password = request.form['password']
+            confirm_password = request.form['confirm_password']
+            
+            # Import here to avoid circular imports
+            from models import User
+            
+            # Check if passwords match
+            if password != confirm_password:
+                flash('Le password non corrispondono.', 'danger')
+                return redirect(url_for('register'))
+                
+            # Check if username or email already exists
+            if User.query.filter_by(username=username).first():
+                flash('Username già in uso. Scegli un altro username.', 'danger')
+                return redirect(url_for('register'))
+                
+            if User.query.filter_by(email=email).first():
+                flash('Email già registrata. Utilizza un\'altra email.', 'danger')
+                return redirect(url_for('register'))
+                
+            # Create new user
+            new_user = User(
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password)
+            )
+            
+            # Add user to database
+            db.session.add(new_user)
+            db.session.commit()
+            
+            flash('Registrazione completata con successo! Ora puoi accedere.', 'success')
+            return redirect(url_for('login'))
+            
+        return render_template('register.html')
+        
+    @app.route('/profile', methods=['GET', 'POST'])
+    @login_required
+    def profile():
+        """User profile page"""
+        # Import models
+        from models import Dataset, Backtest, MLModel
+        
+        if request.method == 'POST':
+            # Update user information
+            username = request.form['username']
+            email = request.form['email']
+            
+            # Check if username or email is already taken (by another user)
+            if username != current_user.username and User.query.filter_by(username=username).first():
+                flash('Username già in uso. Scegli un altro username.', 'danger')
+                return redirect(url_for('profile'))
+                
+            if email != current_user.email and User.query.filter_by(email=email).first():
+                flash('Email già registrata. Utilizza un\'altra email.', 'danger')
+                return redirect(url_for('profile'))
+                
+            # Update user
+            current_user.username = username
+            current_user.email = email
+            
+            # Save changes
+            db.session.commit()
+            
+            flash('Profilo aggiornato con successo!', 'success')
+            return redirect(url_for('profile'))
+        
+        # Get user's datasets, backtests, and models
+        datasets = Dataset.query.filter_by(user_id=current_user.id).order_by(Dataset.created_at.desc()).all()
+        backtests = Backtest.query.filter_by(user_id=current_user.id).order_by(Backtest.created_at.desc()).all()
+        models = MLModel.query.filter_by(user_id=current_user.id).order_by(MLModel.created_at.desc()).all()
+        
+        return render_template('profile.html', datasets=datasets, backtests=backtests, models=models)
+        
+    @app.route('/change_password', methods=['POST'])
+    @login_required
+    def change_password():
+        """Change user password"""
+        current_password = request.form['current_password']
+        new_password = request.form['new_password']
+        confirm_password = request.form['confirm_password']
+        
+        # Check if current password is correct
+        if not check_password_hash(current_user.password_hash, current_password):
+            flash('Password attuale non corretta.', 'danger')
+            return redirect(url_for('profile'))
+            
+        # Check if new passwords match
+        if new_password != confirm_password:
+            flash('Le nuove password non corrispondono.', 'danger')
+            return redirect(url_for('profile'))
+            
+        # Update password
+        current_user.password_hash = generate_password_hash(new_password)
+        
+        # Save changes
+        db.session.commit()
+        
+        flash('Password aggiornata con successo!', 'success')
+        return redirect(url_for('profile'))
     
     @app.route('/upload')
     def upload():
