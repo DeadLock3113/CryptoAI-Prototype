@@ -329,16 +329,58 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Aggiorna una metrica con animazione
+    // Aggiorna una metrica con animazione ed effetti visivi
     function updateMetricWithAnimation(elementId, value) {
         const element = document.getElementById(elementId);
         const updateTimeElement = document.getElementById(`update-${elementId.replace('metric-', '')}`);
+        const metricCard = element ? element.closest('.metric-card') : null;
         
         if (element) {
+            // Applica classe per effetto visivo durante l'aggiornamento
+            if (metricCard) {
+                metricCard.classList.add('updating');
+                setTimeout(() => {
+                    metricCard.classList.remove('updating');
+                }, 800);
+            }
+            
+            // Memorizza valore precedente per confronto
+            const previousValue = parseFloat(element.textContent) || 0;
+            
+            // Anima il cambiamento del valore numerico
             animateValueChange(element, value, 800);
             
+            // Applica effetto di evidenziazione se il valore è migliorato
+            // (per metriche di errore, miglioramento = diminuzione)
+            if (elementId.includes('mse') || elementId.includes('rmse') || elementId.includes('mae')) {
+                if (value < previousValue && previousValue > 0) {
+                    element.classList.add('changed');
+                    setTimeout(() => {
+                        element.classList.remove('changed');
+                    }, 1500);
+                }
+            } 
+            // Per R², miglioramento = aumento
+            else if (elementId.includes('r2')) {
+                if (value > previousValue) {
+                    element.classList.add('changed');
+                    setTimeout(() => {
+                        element.classList.remove('changed');
+                    }, 1500);
+                }
+            }
+            
+            // Aggiorna timestamp
             if (updateTimeElement) {
                 updateTimeElement.textContent = new Date().toLocaleTimeString();
+            }
+            
+            // Effetto pulse
+            if (metricCard && Math.abs(value - previousValue) > 0.01) {
+                metricCard.classList.add('metric-pulse');
+                setTimeout(() => {
+                    metricCard.classList.remove('metric-pulse');
+                }, 1000);
             }
         }
     }

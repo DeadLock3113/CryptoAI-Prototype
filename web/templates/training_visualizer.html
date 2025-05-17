@@ -59,17 +59,56 @@
         border-left: 4px solid var(--bs-primary);
         padding: 15px;
         border-radius: 5px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .metric-card::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 3px;
+        width: 0;
+        background: linear-gradient(90deg, var(--bs-primary), var(--bs-success));
+        transition: width 0.5s ease;
+    }
+    
+    .metric-card.updating::after {
+        width: 100%;
+        transition: width 0.8s ease-in-out;
     }
     
     .metric-value {
         font-size: 1.5rem;
         font-weight: bold;
         color: var(--bs-light);
+        transition: color 0.3s ease;
+    }
+    
+    .metric-value.changed {
+        color: var(--bs-success);
     }
     
     .metric-label {
         font-size: 0.9rem;
         color: var(--bs-gray-400);
+    }
+    
+    .metric-pulse {
+        animation: pulse 1s ease-in-out;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
     }
     
     @media (max-width: 768px) {
@@ -176,19 +215,19 @@
                         </div>
                         
                         <div class="metrics-container">
-                            <div class="metric-card">
+                            <div class="metric-card" style="border-color: var(--bs-primary);">
                                 <div class="metric-value" id="current-epoch">0</div>
                                 <div class="metric-label">Epoca Corrente</div>
                             </div>
-                            <div class="metric-card">
+                            <div class="metric-card" style="border-color: var(--bs-danger);">
                                 <div class="metric-value" id="current-loss">-</div>
                                 <div class="metric-label">Loss Corrente</div>
                             </div>
-                            <div class="metric-card">
+                            <div class="metric-card" style="border-color: var(--bs-info);">
                                 <div class="metric-value" id="time-elapsed">0s</div>
                                 <div class="metric-label">Tempo Trascorso</div>
                             </div>
-                            <div class="metric-card">
+                            <div class="metric-card" style="border-color: var(--bs-warning);">
                                 <div class="metric-value" id="time-remaining">-</div>
                                 <div class="metric-label">Tempo Rimanente</div>
                             </div>
@@ -236,22 +275,54 @@
                                     </thead>
                                     <tbody id="metrics-table-body">
                                         <tr>
-                                            <td>MSE</td>
+                                            <td>
+                                                <span class="d-flex align-items-center">
+                                                    <i class="bi bi-square-fill text-danger me-2"></i>
+                                                    MSE
+                                                    <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Mean Squared Error - Misura la media dei quadrati degli errori">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </span>
+                                                </span>
+                                            </td>
                                             <td id="metric-mse">-</td>
                                             <td id="update-mse">-</td>
                                         </tr>
                                         <tr>
-                                            <td>RMSE</td>
+                                            <td>
+                                                <span class="d-flex align-items-center">
+                                                    <i class="bi bi-square-fill text-warning me-2"></i>
+                                                    RMSE
+                                                    <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Root Mean Squared Error - Radice quadrata dell'MSE, più interpretabile">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </span>
+                                                </span>
+                                            </td>
                                             <td id="metric-rmse">-</td>
                                             <td id="update-rmse">-</td>
                                         </tr>
                                         <tr>
-                                            <td>MAE</td>
+                                            <td>
+                                                <span class="d-flex align-items-center">
+                                                    <i class="bi bi-square-fill text-info me-2"></i>
+                                                    MAE
+                                                    <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Mean Absolute Error - Media degli errori assoluti">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </span>
+                                                </span>
+                                            </td>
                                             <td id="metric-mae">-</td>
                                             <td id="update-mae">-</td>
                                         </tr>
                                         <tr>
-                                            <td>R²</td>
+                                            <td>
+                                                <span class="d-flex align-items-center">
+                                                    <i class="bi bi-square-fill text-success me-2"></i>
+                                                    R²
+                                                    <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Coefficiente di determinazione - Misura la qualità della previsione (0-1)">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </span>
+                                                </span>
+                                            </td>
                                             <td id="metric-r2">-</td>
                                             <td id="update-r2">-</td>
                                         </tr>
@@ -325,16 +396,45 @@
     
     // Ascoltare eventi personalizzati dal visualizzatore
     document.addEventListener('DOMContentLoaded', function() {
+        // Inizializza i tooltip di Bootstrap
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        
+        // Gestione dell'aggiornamento delle metriche con effetti visivi
+        document.querySelectorAll('.metric-card').forEach(card => {
+            const metricValue = card.querySelector('.metric-value');
+            if (metricValue) {
+                const observer = new MutationObserver(mutations => {
+                    mutations.forEach(mutation => {
+                        if (mutation.type === 'childList') {
+                            card.classList.add('updating');
+                            setTimeout(() => {
+                                card.classList.remove('updating');
+                            }, 800);
+                        }
+                    });
+                });
+                
+                observer.observe(metricValue, { childList: true });
+            }
+        });
+        
         const eventSource = new EventSource('/training-progress/{{ training_id }}');
         
         eventSource.addEventListener('epoch_update', function(e) {
             const data = JSON.parse(e.data);
-            document.getElementById('current-epoch').textContent = data.epoch;
-            document.getElementById('current-loss').textContent = data.train_loss.toFixed(6);
-            document.getElementById('time-elapsed').textContent = formatTime(data.elapsed_time);
-            
-            if (data.estimated_remaining_time) {
-                document.getElementById('time-remaining').textContent = formatTime(data.estimated_remaining_time);
+            // Utilizziamo la funzione animata per aggiornare i valori
+            if (window.TrainingVisualizer && window.TrainingVisualizer.updateRealTimeMetrics) {
+                window.TrainingVisualizer.updateRealTimeMetrics(data);
+            } else {
+                // Fallback per compatibilità
+                document.getElementById('current-epoch').textContent = data.epoch;
+                document.getElementById('current-loss').textContent = data.train_loss.toFixed(6);
+                document.getElementById('time-elapsed').textContent = formatTime(data.elapsed_time);
+                
+                if (data.estimated_remaining_time) {
+                    document.getElementById('time-remaining').textContent = formatTime(data.estimated_remaining_time);
+                }
             }
             
             appendToLog(`Epoca ${data.epoch}/${data.total_epochs}: Train Loss=${data.train_loss.toFixed(6)}, Val Loss=${data.val_loss.toFixed(6)}`);
