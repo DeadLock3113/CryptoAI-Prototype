@@ -1,0 +1,46 @@
+DEBUG:simple_app:Starting training of LSTM model with 12884 samples on cpu
+/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/torch/utils/data/dataloader.py:665: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+[2025-05-17 21:19:53 +0000] [14941] [CRITICAL] WORKER TIMEOUT (pid:15103)
+[2025-05-17 21:19:53 +0000] [15103] [ERROR] Error handling request /models?dataset_id=3
+Traceback (most recent call last):
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/gunicorn/workers/sync.py", line 134, in handle
+    self.handle_request(listener, req, client, addr)
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/gunicorn/workers/sync.py", line 177, in handle_request
+    respiter = self.wsgi(environ, resp.start_response)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1536, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/simple_app.py", line 1710, in models
+    loss.backward()
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/gunicorn/workers/base.py", line 204, in handle_abort
+    sys.exit(1)
+SystemExit: 1
+[2025-05-17 21:19:53 +0000] [15103] [INFO] Worker exiting (pid: 15103)
+[2025-05-17 21:19:54 +0000] [15388] [INFO] Booting worker with pid: 15388
+DEBUG:matplotlib:matplotlib data path: /home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/matplotlib/mpl-data
+DEBUG:matplotlib:CONFIGDIR=/home/runner/workspace/.config/matplotlib
+DEBUG:matplotlib:interactive is False
+DEBUG:matplotlib:platform is linux
+DEBUG:matplotlib:CACHEDIR=/home/runner/workspace/.cache/matplotlib
+DEBUG:matplotlib.font_manager:Using fontManager instance from /home/runner/workspace/.cache/matplotlib/fontlist-v390.json
+^C[2025-05-17 21:20:01 +0000] [14941] [INFO] Handling signal: int
+[2025-05-17 21:20:01 +0000] [15388] [INFO] Worker exiting (pid: 15388)
+[2025-05-17 21:20:01 +0000] [14941] [INFO] Shutting down: Master

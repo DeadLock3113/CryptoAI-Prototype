@@ -1608,18 +1608,22 @@ def models():
             X_test_tensor = torch.FloatTensor(X_test)
             y_test_tensor = torch.FloatTensor(y_test)
             
-            # Create datasets and dataloaders with optimal settings
+            # Create datasets and dataloaders con ottimizzazioni aggiuntive
             train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
             test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
             
-            # Use multiple workers for data loading if dataset is large enough
-            num_workers = 0
+            # Disabilita multi-threading per evitare timeout nel server web
+            # Aumenta batch size per velocizzare l'addestramento ma riduci workers
+            num_workers = 0  # Nessun worker aggiuntivo per evitare timeout
             pin_memory = False
             
-            if len(train_dataset) > 1000:
-                num_workers = 2
-                pin_memory = True
-                logger.debug(f"Using optimized data loading with {num_workers} workers")
+            # Aumenta il batch size in base alla dimensione del dataset 
+            if len(train_dataset) > 5000:
+                batch_size = max(batch_size, 128)
+            if len(train_dataset) > 10000:
+                batch_size = max(batch_size, 256)
+                
+            logger.debug(f"Using batch size: {batch_size}")
             
             train_loader = DataLoader(
                 train_dataset, 
@@ -1693,12 +1697,23 @@ def models():
             # Training message
             logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples on {device}")
             
-            # Training loop
-            for epoch in range(epochs):
+            # Training loop con limitazioni per evitare timeout
+            max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
+            logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
+            
+            for epoch in range(max_training_epochs):
                 # Training
                 model.train()
                 train_loss = 0
-                for inputs, targets in train_loader:
+                
+                # Limitiamo il numero di batch per evitare timeout
+                max_batches = min(len(train_loader), 10)
+                batch_count = 0
+                
+                for i, (inputs, targets) in enumerate(train_loader):
+                    if i >= max_batches:
+                        break  # Limitiamo il numero di batch
+                        
                     inputs, targets = inputs.to(device), targets.to(device)
                     
                     # Forward pass
@@ -1711,39 +1726,46 @@ def models():
                     optimizer.step()
                     
                     train_loss += loss.item()
+                    batch_count += 1
                 
-                # Validation
+                # Validation - limitiamo anche questa
                 model.eval()
                 val_loss = 0
+                max_val_batches = min(len(test_loader), 5)
+                val_batch_count = 0
+                
                 with torch.no_grad():
-                    for inputs, targets in test_loader:
+                    for i, (inputs, targets) in enumerate(test_loader):
+                        if i >= max_val_batches:
+                            break  # Limitiamo il numero di batch di validazione
+                            
                         inputs, targets = inputs.to(device), targets.to(device)
                         outputs = model(inputs)
                         loss = criterion(outputs, targets)
                         val_loss += loss.item()
+                        val_batch_count += 1
                 
                 # Calculate average losses
-                train_loss /= len(train_loader)
-                val_loss /= len(test_loader)
+                train_loss = train_loss / batch_count if batch_count > 0 else 0
+                val_loss = val_loss / val_batch_count if val_batch_count > 0 else 0
                 
                 # Store history
                 history['loss'].append(train_loss)
                 history['val_loss'].append(val_loss)
                 
-                # Early stopping
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    patience_counter = 0
+                # Salva sempre il modello nell'ultima epoca in modalità demo
+                if epoch == max_training_epochs - 1:
                     best_model_state = model.state_dict().copy()
-                else:
-                    patience_counter += 1
-                    if patience_counter >= patience:
-                        logger.debug(f"Early stopping at epoch {epoch+1}")
-                        break
+                # Early stopping - semplificato per demo
+                elif val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_model_state = model.state_dict().copy()
                 
-                # Print progress
-                if (epoch + 1) % 10 == 0:
-                    logger.debug(f'Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                # Print progress per ogni epoca in modalità demo
+                logger.debug(f'Epoca [{epoch+1}/{max_training_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                
+            # Notifica all'utente che è stata usata la modalità demo
+            flash('Addestramento completato in modalità demo (limitata). Per un addestramento completo, considera di utilizzare uno script offline.', 'warning')
             
             # Load best model
             if best_model_state:
