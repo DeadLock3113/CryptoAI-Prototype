@@ -35,8 +35,8 @@ def create_app():
         UPLOAD_FOLDER=os.path.join(os.getcwd(), 'uploads'),
         TEMPLATES_AUTO_RELOAD=True,
         DEBUG=True,
-        # Database configuration
-        SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:///crypto_analyzer.db"),
+        # Database configuration - Using SQLite for simplicity
+        SQLALCHEMY_DATABASE_URI="sqlite:///crypto_analyzer.db",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
     )
     

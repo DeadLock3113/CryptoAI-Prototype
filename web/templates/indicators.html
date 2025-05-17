@@ -1,39 +1,190 @@
 {% extends "layout.html" %}
 
-{% block title %}Technical Indicators{% endblock %}
+{% block title %}Indicatori Tecnici{% endblock %}
 
-{% block page_header %}Technical Indicators{% endblock %}
+{% block page_header %}Indicatori Tecnici{% endblock %}
 
 {% block page_description %}
-Calculate and visualize technical indicators for your cryptocurrency data
+Calcola e visualizza indicatori tecnici avanzati per le tue criptovalute
 {% endblock %}
 
 {% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h2 class="card-title">Analisi Tecnica con Indicatori Avanzati</h2>
+        <p class="card-text">
+            Gli indicatori tecnici sono strumenti matematici che analizzano i dati storici dei prezzi per individuare
+            tendenze, punti di inversione e opportunità di trading. CryptoTradeAnalyzer offre una vasta gamma di
+            indicatori per l'analisi dei mercati delle criptovalute.
+        </p>
+    </div>
+</div>
+
 <div class="row">
-    <div class="col-lg-8">
-        <div class="card shadow-sm">
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Select Indicators</h5>
+                <h5 class="mb-0">Seleziona Dataset</h5>
             </div>
             <div class="card-body">
-                <form action="{{ url_for('indicators') }}" method="post">
-                    <div class="row mb-4">
-                        {% for indicator in indicator_options %}
-                        <div class="col-md-6">
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" name="indicators" value="{{ indicator.id }}" id="indicator-{{ indicator.id }}">
-                                <label class="form-check-label" for="indicator-{{ indicator.id }}">
-                                    {{ indicator.name }}
-                                </label>
+                <p>Seleziona un dataset su cui calcolare gli indicatori tecnici.</p>
+                
+                <form method="GET" id="datasetForm">
+                    <div class="mb-3">
+                        <label for="dataset_select" class="form-label">Dataset</label>
+                        <select class="form-select" id="dataset_select" name="dataset_id" onchange="this.form.submit()">
+                            <option>Seleziona un dataset</option>
+                            {% if user_datasets %}
+                                {% for dataset in user_datasets %}
+                                <option value="{{ dataset.id }}" {% if selected_dataset and dataset.id == selected_dataset.id %}selected{% endif %}>
+                                    {{ dataset.name }} ({{ dataset.symbol }})
+                                </option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </form>
+                
+                <div class="mt-3">
+                    <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm w-100">
+                        <i class="fas fa-upload me-2"></i> Carica Nuovo Dataset
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Configura Indicatori</h5>
+            </div>
+            <div class="card-body">
+                <form id="indicatorForm">
+                    <h6 class="mb-3">Indicatori di Trend</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="maCheck" name="indicators" value="ma">
+                        <label class="form-check-label" for="maCheck">
+                            Media Mobile (MA)
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="maConfig">
+                            <div class="mb-2">
+                                <label class="form-label small">Periodo</label>
+                                <input type="number" class="form-control form-control-sm" name="ma_period" value="20">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Tipo</label>
+                                <select class="form-select form-select-sm" name="ma_type">
+                                    <option value="simple">Simple</option>
+                                    <option value="exponential">Exponential</option>
+                                    <option value="weighted">Weighted</option>
+                                </select>
                             </div>
                         </div>
-                        {% endfor %}
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="macdCheck" name="indicators" value="macd">
+                        <label class="form-check-label" for="macdCheck">
+                            MACD
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="macdConfig">
+                            <div class="row g-2">
+                                <div class="col-4">
+                                    <label class="form-label small">Fast</label>
+                                    <input type="number" class="form-control form-control-sm" name="macd_fast" value="12">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small">Slow</label>
+                                    <input type="number" class="form-control form-control-sm" name="macd_slow" value="26">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small">Signal</label>
+                                    <input type="number" class="form-control form-control-sm" name="macd_signal" value="9">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="d-grid">
+                    <h6 class="mb-3 mt-4">Oscillatori</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="rsiCheck" name="indicators" value="rsi">
+                        <label class="form-check-label" for="rsiCheck">
+                            RSI
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="rsiConfig">
+                            <div class="mb-2">
+                                <label class="form-label small">Periodo</label>
+                                <input type="number" class="form-control form-control-sm" name="rsi_period" value="14">
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label small">Ipercomprato</label>
+                                    <input type="number" class="form-control form-control-sm" name="rsi_overbought" value="70">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small">Ipervenduto</label>
+                                    <input type="number" class="form-control form-control-sm" name="rsi_oversold" value="30">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="stochCheck" name="indicators" value="stoch">
+                        <label class="form-check-label" for="stochCheck">
+                            Stocastico
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="stochConfig">
+                            <div class="row g-2">
+                                <div class="col-4">
+                                    <label class="form-label small">K</label>
+                                    <input type="number" class="form-control form-control-sm" name="stoch_k" value="14">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small">D</label>
+                                    <input type="number" class="form-control form-control-sm" name="stoch_d" value="3">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small">Slow</label>
+                                    <input type="number" class="form-control form-control-sm" name="stoch_slow" value="3">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6 class="mb-3 mt-4">Volatilità</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="bbCheck" name="indicators" value="bb">
+                        <label class="form-check-label" for="bbCheck">
+                            Bollinger Bands
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="bbConfig">
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label small">Periodo</label>
+                                    <input type="number" class="form-control form-control-sm" name="bb_period" value="20">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small">Dev. Standard</label>
+                                    <input type="number" class="form-control form-control-sm" name="bb_std" value="2" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="atrCheck" name="indicators" value="atr">
+                        <label class="form-check-label" for="atrCheck">
+                            ATR
+                        </label>
+                        <div class="ms-4 mt-1 collapse" id="atrConfig">
+                            <div class="mb-2">
+                                <label class="form-label small">Periodo</label>
+                                <input type="number" class="form-control form-control-sm" name="atr_period" value="14">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid mt-4">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-calculator me-2"></i>
-                            Calculate Indicators
+                            Calcola Indicatori
                         </button>
                     </div>
                 </form>
@@ -41,87 +192,78 @@ Calculate and visualize technical indicators for your cryptocurrency data
         </div>
     </div>
     
-    <div class="col-lg-4">
+    <div class="col-lg-8">
         <div class="card shadow-sm mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>
-                    About Technical Indicators
-                </h5>
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Grafico Indicatori</h5>
             </div>
             <div class="card-body">
-                <p>Technical indicators are mathematical calculations based on price and/or volume data that help traders identify potential trading signals and patterns.</p>
+                <div class="text-center py-5">
+                    <i class="fas fa-chart-line fa-4x mb-3 text-muted"></i>
+                    <h4 class="text-muted">Seleziona un dataset e calcola gli indicatori</h4>
+                    <p class="text-muted">
+                        Il grafico degli indicatori apparirà qui dopo aver selezionato un dataset e 
+                        calcolato gli indicatori.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Segnali di Trading</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Seleziona un dataset e calcola gli indicatori per visualizzare i segnali di trading.
+                </div>
                 
-                <div class="accordion" id="indicatorAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingOne">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
-                                Moving Averages (SMA, EMA)
-                            </button>
-                        </h2>
-                        <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#indicatorAccordion">
-                            <div class="accordion-body">
-                                <p>Moving averages smooth out price data to create a single flowing line, making it easier to identify the direction of the trend.</p>
-                                <p><strong>SMA</strong> (Simple Moving Average) gives equal weight to all observations.</p>
-                                <p><strong>EMA</strong> (Exponential Moving Average) gives more weight to recent observations.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingTwo">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
-                                RSI (Relative Strength Index)
-                            </button>
-                        </h2>
-                        <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#indicatorAccordion">
-                            <div class="accordion-body">
-                                <p>RSI measures the speed and change of price movements on a scale from 0 to 100.</p>
-                                <p>Traditionally, RSI values of 70 or above indicate that an asset is becoming overbought, while RSI values of 30 or below suggest oversold conditions.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingThree">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
-                                MACD (Moving Average Convergence Divergence)
-                            </button>
-                        </h2>
-                        <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#indicatorAccordion">
-                            <div class="accordion-body">
-                                <p>MACD is a trend-following momentum indicator that shows the relationship between two moving averages of a security's price.</p>
-                                <p>The MACD line is calculated by subtracting the 26-period EMA from the 12-period EMA. The signal line is typically a 9-period EMA of the MACD line.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingFour">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
-                                Bollinger Bands
-                            </button>
-                        </h2>
-                        <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="headingFour" data-bs-parent="#indicatorAccordion">
-                            <div class="accordion-body">
-                                <p>Bollinger Bands consist of a middle band (usually a 20-period SMA) and two outer bands that are two standard deviations away from the middle band.</p>
-                                <p>They help identify volatility and potential overbought/oversold conditions.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingFive">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFive" aria-expanded="false" aria-controls="collapseFive">
-                                Stochastic Oscillator
-                            </button>
-                        </h2>
-                        <div id="collapseFive" class="accordion-collapse collapse" aria-labelledby="headingFive" data-bs-parent="#indicatorAccordion">
-                            <div class="accordion-body">
-                                <p>The Stochastic Oscillator is a momentum indicator that compares a security's closing price to its price range over a specific period.</p>
-                                <p>It consists of two lines: %K (fast) and %D (slow), and ranges from 0 to 100.</p>
-                            </div>
-                        </div>
-                    </div>
+                <div class="table-responsive d-none">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Indicatore</th>
+                                <th>Valore</th>
+                                <th>Segnale</th>
+                                <th>Forza</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- I segnali verranno inseriti qui dinamicamente -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Toggle indicator config sections when checkboxes are clicked
+        document.querySelectorAll('input[name="indicators"]').forEach(function(checkbox) {
+            checkbox.addEventListener('change', function() {
+                const configId = this.id.replace('Check', 'Config');
+                const configElement = document.getElementById(configId);
+                
+                if (this.checked) {
+                    $(configElement).collapse('show');
+                } else {
+                    $(configElement).collapse('hide');
+                }
+            });
+        });
+        
+        // Handle form submission (to be implemented)
+        document.getElementById('indicatorForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            // Simulazione dell'invio del form e calcolo degli indicatori
+            alert('Funzionalità in fase di implementazione. Questa è solo una dimostrazione dell\'interfaccia.');
+        });
+    });
+</script>
 {% endblock %}
