@@ -91,48 +91,127 @@ with app.app_context():
 def get_current_user():
     """Get current user from session"""
     if 'user_id' in session:
-        return User.query.get(session['user_id'])
+        # Usiamo la cache per gli utenti
+        user_cache_key = f"user_{session['user_id']}"
+        if user_cache_key in _memory_cache:
+            return _memory_cache[user_cache_key]
+            
+        user = User.query.get(session['user_id'])
+        if user:
+            _memory_cache[user_cache_key] = user
+            return user
     return None
 
 def load_dataset(dataset_id):
-    """Load dataset from file"""
+    """Load dataset from file with caching"""
+    # Verifica se il dataset è già nella cache
+    cache_key = f"dataset_{dataset_id}"
+    if cache_key in _memory_cache:
+        logger.debug(f"Using cached dataset {dataset_id}")
+        return _memory_cache[cache_key]
+    
+    # Ottieni dataset dal database
     dataset = Dataset.query.get(dataset_id)
-    if dataset and os.path.exists(dataset.file_path):
-        return pd.read_csv(dataset.file_path, index_col=0, parse_dates=True)
-    return None
+    if not dataset or not dataset.file_path or not os.path.exists(dataset.file_path):
+        return None
+    
+    # Ottimizzazione caricamento CSV
+    try:
+        # Usa dtype per ottimizzare memoria
+        df = pd.read_csv(
+            dataset.file_path, 
+            parse_dates=['timestamp'],
+            dtype={
+                'open': 'float32',
+                'high': 'float32',
+                'low': 'float32',
+                'close': 'float32',
+                'volume': 'float32'
+            }
+        )
+        
+        # Set the timestamp as index for faster operations
+        df.set_index('timestamp', inplace=True)
+        
+        # Salva nella cache
+        _memory_cache[cache_key] = df
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error loading dataset {dataset_id}: {str(e)}")
+        return None
 
-def generate_price_chart(data, symbol):
-    """Generate price chart for dataset"""
-    plt.figure(figsize=(10, 6))
+def generate_price_chart(data, symbol, resolution='full'):
+    """
+    Generate price chart for dataset with caching and performance optimization
     
-    # Plot closing price
-    if 'close' in data.columns:
-        plt.plot(data.index, data['close'], label='Prezzo di chiusura')
+    Args:
+        data: DataFrame with price data
+        symbol: Symbol name for the title
+        resolution: Chart resolution ('full', 'low', 'medium', 'high')
+    """
+    # Check if chart is already in cache
+    cache_key = f"chart_{symbol}_{resolution}_{hash(tuple(data.index[-10:].tolist()))}"
+    if cache_key in _memory_cache:
+        logger.debug(f"Using cached chart for {symbol}")
+        return _memory_cache[cache_key]
     
-    # Plot volume as bar chart on secondary y-axis if present
-    if 'volume' in data.columns:
-        ax1 = plt.gca()
-        ax2 = ax1.twinx()
-        ax2.bar(data.index, data['volume'], alpha=0.3, color='gray', label='Volume')
-        ax2.set_ylabel('Volume')
+    # Set DPI and downsample data based on resolution for faster rendering
+    if resolution == 'low':
+        dpi = 72
+        # Downsampling for large datasets
+        if len(data) > 1000:
+            data = data.iloc[::5]  # Take every 5th row
+    elif resolution == 'medium':
+        dpi = 100
+        if len(data) > 2000:
+            data = data.iloc[::3]  # Take every 3rd row
+    else:  # high or full
+        dpi = 120
+        # Downsampling only for very large datasets
+        if len(data) > 5000:
+            data = data.iloc[::2]  # Take every 2nd row
     
-    # Add labels and legend
-    plt.title(f"{symbol} - Andamento Prezzi")
-    plt.xlabel('Data')
-    plt.ylabel('Prezzo')
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc='upper left')
-    
-    # Save plot to buffer
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
-    buffer.seek(0)
-    
-    # Convert plot to base64 for embedding in HTML
-    chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    plt.close()
-    
-    return chart_data
+    # Optimize Matplotlib settings for faster rendering
+    with plt.style.context('fast'):
+        fig = plt.figure(figsize=(10, 6))
+        
+        # Plot closing price more efficiently
+        if 'close' in data.columns:
+            plt.plot(data.index, data['close'], label='Prezzo di chiusura', linewidth=1.5)
+        
+        # Plot volume more efficiently if present
+        if 'volume' in data.columns and data['volume'].sum() > 0:
+            ax1 = plt.gca()
+            ax2 = ax1.twinx()
+            # Use faster bar chart with reduced transparency for better performance
+            ax2.bar(data.index, data['volume'], alpha=0.2, color='gray', label='Volume', width=2)
+            ax2.set_ylabel('Volume')
+        
+        # Add labels and legend
+        plt.title(f"{symbol} - Andamento Prezzi")
+        plt.xlabel('Data')
+        plt.ylabel('Prezzo')
+        plt.grid(True, alpha=0.2)
+        plt.legend(loc='upper left')
+        
+        # Optimize the figure for faster rendering
+        fig.tight_layout()
+        
+        # Save plot to buffer with optimized settings
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', dpi=dpi, bbox_inches='tight', 
+                   optimize=True, transparent=False)
+        buffer.seek(0)
+        
+        # Convert plot to base64 with optimized compression
+        chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        plt.close(fig)
+        
+        # Cache the result
+        _memory_cache[cache_key] = chart_data
+        
+        return chart_data
 
 # Routes
 @app.route('/')
