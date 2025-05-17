@@ -2,6 +2,12 @@
 
 {% block title %}Interactive Training Visualizer{% endblock %}
 
+{% block head %}
+{{ super() }}
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+{% endblock %}
+
 {% block styles %}
 <style>
     .training-container {
@@ -339,6 +345,8 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Bootstrap 5 Bundle con Popper.js (necessario per i tooltip) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.8.0/dist/chart.min.js"></script>
 <!-- Training Visualizer Script -->
