@@ -1,0 +1,318 @@
+"""
+Interazione con le API degli exchange di criptovalute
+
+Questo modulo fornisce funzioni per interagire con le API degli exchange
+come Binance e Kraken per ottenere informazioni sul saldo, prezzi, ecc.
+"""
+
+import logging
+import hmac
+import hashlib
+import time
+import json
+import base64
+import requests
+from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
+
+class ExchangeAPIError(Exception):
+    """Eccezione per errori nelle API degli exchange"""
+    pass
+
+def get_binance_account_balance(api_key, api_secret):
+    """
+    Ottiene il saldo dell'account Binance.
+    
+    Args:
+        api_key (str): Chiave API di Binance
+        api_secret (str): Secret API di Binance
+        
+    Returns:
+        dict: Informazioni sul saldo
+        
+    Raises:
+        ExchangeAPIError: Se si verifica un errore durante la richiesta
+    """
+    if not api_key or not api_secret:
+        logger.warning("API key o API secret mancanti per Binance")
+        raise ExchangeAPIError("API key o API secret mancanti per Binance")
+    
+    try:
+        # Endpoint e parametri per il saldo dell'account
+        endpoint = 'https://api.binance.com/api/v3/account'
+        
+        # Aggiungi timestamp per la firma
+        timestamp = int(time.time() * 1000)
+        params = {
+            'timestamp': timestamp
+        }
+        
+        # Genera la firma HMAC SHA256
+        query_string = urlencode(params)
+        signature = hmac.new(
+            api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        params['signature'] = signature
+        
+        # Intestazioni con l'API key
+        headers = {
+            'X-MBX-APIKEY': api_key
+        }
+        
+        # Effettua la richiesta
+        response = requests.get(endpoint, params=params, headers=headers, timeout=10)
+        
+        # Verifica la risposta
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Estrai i saldi
+            balances = []
+            for asset in data['balances']:
+                free = float(asset['free'])
+                locked = float(asset['locked'])
+                total = free + locked
+                
+                if total > 0:  # Ignora saldi zero
+                    balances.append({
+                        'currency': asset['asset'],
+                        'free': free,
+                        'locked': locked,
+                        'total': total
+                    })
+            
+            # Converti i saldi in formato unificato
+            result = {
+                'exchange': 'Binance',
+                'balances': balances
+            }
+            
+            return result
+        else:
+            error_msg = f"Errore Binance API: {response.status_code} - {response.text}"
+            logger.error(error_msg)
+            raise ExchangeAPIError(error_msg)
+            
+    except Exception as e:
+        error_msg = f"Errore durante la richiesta all'API Binance: {str(e)}"
+        logger.error(error_msg)
+        raise ExchangeAPIError(error_msg)
+
+def get_kraken_account_balance(api_key, api_secret):
+    """
+    Ottiene il saldo dell'account Kraken.
+    
+    Args:
+        api_key (str): Chiave API di Kraken
+        api_secret (str): Secret API di Kraken
+        
+    Returns:
+        dict: Informazioni sul saldo
+        
+    Raises:
+        ExchangeAPIError: Se si verifica un errore durante la richiesta
+    """
+    if not api_key or not api_secret:
+        logger.warning("API key o API secret mancanti per Kraken")
+        raise ExchangeAPIError("API key o API secret mancanti per Kraken")
+    
+    try:
+        # Endpoint e parametri per il saldo dell'account
+        api_url = "https://api.kraken.com"
+        endpoint = "/0/private/Balance"
+        
+        # Nonce per la sicurezza (timestamp)
+        nonce = str(int(time.time() * 1000))
+        
+        # Dati della richiesta
+        data = {
+            "nonce": nonce,
+        }
+        
+        # Genera la firma
+        post_data = urlencode(data)
+        encoded = (str(data['nonce']) + post_data).encode()
+        message = endpoint.encode() + hashlib.sha256(encoded).digest()
+        
+        # Firma con HMAC-SHA512
+        signature = hmac.new(
+            base64.b64decode(api_secret),
+            message,
+            hashlib.sha512
+        ).digest()
+        
+        # Intestazioni con la firma
+        headers = {
+            'API-Key': api_key,
+            'API-Sign': base64.b64encode(signature).decode()
+        }
+        
+        # Effettua la richiesta
+        response = requests.post(
+            api_url + endpoint,
+            data=data,
+            headers=headers,
+            timeout=10
+        )
+        
+        # Verifica la risposta
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data['error']:
+                error_msg = f"Errore Kraken API: {data['error']}"
+                logger.error(error_msg)
+                raise ExchangeAPIError(error_msg)
+            
+            # Estrai i saldi
+            balances = []
+            for currency, amount in data['result'].items():
+                # Kraken aggiunge prefissi X e Z alle valute, rimuoviamoli
+                clean_currency = currency
+                if currency.startswith('X') or currency.startswith('Z'):
+                    clean_currency = currency[1:]
+                
+                balances.append({
+                    'currency': clean_currency,
+                    'free': float(amount),  # Kraken non distingue tra free e locked
+                    'locked': 0.0,
+                    'total': float(amount)
+                })
+            
+            # Converti i saldi in formato unificato
+            result = {
+                'exchange': 'Kraken',
+                'balances': balances
+            }
+            
+            return result
+        else:
+            error_msg = f"Errore Kraken API: {response.status_code} - {response.text}"
+            logger.error(error_msg)
+            raise ExchangeAPIError(error_msg)
+            
+    except Exception as e:
+        error_msg = f"Errore durante la richiesta all'API Kraken: {str(e)}"
+        logger.error(error_msg)
+        raise ExchangeAPIError(error_msg)
+
+def get_account_balances(user):
+    """
+    Ottiene il saldo degli account dell'utente da tutti gli exchange configurati.
+    
+    Args:
+        user (User): Oggetto utente con le credenziali API
+        
+    Returns:
+        dict: Informazioni sui saldi degli exchange
+    """
+    results = {
+        'exchanges': [],
+        'currencies': {},
+        'total_balance_usdt': 0.0
+    }
+    
+    # Ottieni prezzi attuali in USDT per la conversione
+    prices = get_usdt_prices()
+    
+    # Controlla se l'utente ha configurato Binance
+    if user.binance_api_key and user.binance_api_secret:
+        try:
+            binance_balance = get_binance_account_balance(
+                user.binance_api_key,
+                user.binance_api_secret
+            )
+            
+            # Calcola il valore totale in USDT
+            for balance in binance_balance['balances']:
+                currency = balance['currency']
+                amount = balance['total']
+                
+                # Aggiungi alla lista valute aggregate
+                if currency not in results['currencies']:
+                    results['currencies'][currency] = 0.0
+                
+                results['currencies'][currency] += amount
+                
+                # Converti in USDT se è disponibile il prezzo
+                if currency in prices:
+                    usdt_value = amount * prices[currency]
+                    balance['usdt_value'] = usdt_value
+                    results['total_balance_usdt'] += usdt_value
+                elif currency == 'USDT':
+                    balance['usdt_value'] = amount
+                    results['total_balance_usdt'] += amount
+            
+            results['exchanges'].append(binance_balance)
+        except ExchangeAPIError as e:
+            logger.error(f"Errore nell'ottenere il saldo Binance: {str(e)}")
+    
+    # Controlla se l'utente ha configurato Kraken
+    if user.kraken_api_key and user.kraken_api_secret:
+        try:
+            kraken_balance = get_kraken_account_balance(
+                user.kraken_api_key,
+                user.kraken_api_secret
+            )
+            
+            # Calcola il valore totale in USDT
+            for balance in kraken_balance['balances']:
+                currency = balance['currency']
+                amount = balance['total']
+                
+                # Aggiungi alla lista valute aggregate
+                if currency not in results['currencies']:
+                    results['currencies'][currency] = 0.0
+                
+                results['currencies'][currency] += amount
+                
+                # Converti in USDT se è disponibile il prezzo
+                if currency in prices:
+                    usdt_value = amount * prices[currency]
+                    balance['usdt_value'] = usdt_value
+                    results['total_balance_usdt'] += usdt_value
+                elif currency == 'USDT':
+                    balance['usdt_value'] = amount
+                    results['total_balance_usdt'] += amount
+            
+            results['exchanges'].append(kraken_balance)
+        except ExchangeAPIError as e:
+            logger.error(f"Errore nell'ottenere il saldo Kraken: {str(e)}")
+    
+    return results
+
+def get_usdt_prices():
+    """
+    Ottiene i prezzi correnti delle principali criptovalute in USDT.
+    
+    Returns:
+        dict: Prezzi delle criptovalute in USDT
+    """
+    try:
+        # Usa l'API pubblica di Binance per ottenere i prezzi
+        response = requests.get('https://api.binance.com/api/v3/ticker/price', timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            prices = {}
+            
+            for item in data:
+                symbol = item['symbol']
+                price = float(item['price'])
+                
+                # Considera solo le coppie con USDT
+                if symbol.endswith('USDT'):
+                    base_currency = symbol[:-4]  # Rimuovi 'USDT' dalla fine
+                    prices[base_currency] = price
+            
+            return prices
+        else:
+            logger.error(f"Errore nell'ottenere i prezzi: {response.status_code} - {response.text}")
+            return {}
+    except Exception as e:
+        logger.error(f"Errore durante la richiesta dei prezzi: {str(e)}")
+        return {}

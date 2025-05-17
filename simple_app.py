@@ -24,6 +24,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from functools import wraps
 
+# Import utility modules
+from utils.telegram_notification import send_price_alert, send_balance_update
+from utils.exchange_api import get_account_balances, ExchangeAPIError
+
 # Importa il gestore dell'addestramento
 import training_handler
 
@@ -136,6 +140,7 @@ class User(db.Model):
     telegram_chat_id = db.Column(db.String(256), nullable=True)
     
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
+    notification_settings = db.relationship('NotificationSettings', backref='user', uselist=False, cascade='all, delete-orphan')
     
     def is_authenticated(self):
         return True
@@ -148,6 +153,18 @@ class User(db.Model):
         
     def get_id(self):
         return str(self.id)
+
+class NotificationSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timeframe = db.Column(db.String(10), default='1h')  # '1m', '5m', '15m', '30m', '1h', '4h', '1d'
+    enabled = db.Column(db.Boolean, default=False)
+    last_notification = db.Column(db.DateTime)
+    
+    # Threshold settings
+    price_change_threshold = db.Column(db.Float, default=1.0)  # Percentuale di cambio per notifiche di movimento significativo
+    volume_change_threshold = db.Column(db.Float, default=20.0)  # Percentuale di cambio del volume
+    
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
 
 class Dataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)

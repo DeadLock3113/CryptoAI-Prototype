@@ -21,6 +21,112 @@
             <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg px-4 me-sm-3">Carica Dati</a>
             <a href="{{ url_for('analysis') }}" class="btn btn-outline-secondary btn-lg px-4">Analizza</a>
         </div>
+        
+        <!-- Saldo Account -->
+        {% if account_balance %}
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h4 class="my-0">Saldo Account</h4>
+            </div>
+            <div class="card-body">
+                <h2 class="card-title pricing-card-title">{{ account_balance.total_balance_usdt|round(2) }} <small class="text-muted">USDT</small></h2>
+                
+                {% if account_balance.exchanges %}
+                <div class="mt-3 mb-4">
+                    <div class="accordion" id="exchangeBalanceAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="headingBalances">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBalances" aria-expanded="false" aria-controls="collapseBalances">
+                                    Dettaglio saldi
+                                </button>
+                            </h2>
+                            <div id="collapseBalances" class="accordion-collapse collapse" aria-labelledby="headingBalances" data-bs-parent="#exchangeBalanceAccordion">
+                                <div class="accordion-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Valuta</th>
+                                                    <th>Quantità</th>
+                                                    <th>Valore (USDT)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for currency, amount in account_balance.currencies.items() %}
+                                                <tr>
+                                                    <td>{{ currency }}</td>
+                                                    <td>{{ amount|round(8) }}</td>
+                                                    <td>
+                                                        {% if currency in account_balance.currency_values %}
+                                                            {{ account_balance.currency_values[currency]|round(2) }}
+                                                        {% elif currency == 'USDT' %}
+                                                            {{ amount|round(2) }}
+                                                        {% else %}
+                                                            -
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <a href="{{ url_for('profile') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-cog me-1"></i> Configura API
+                </a>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Impostazioni notifiche -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h4 class="my-0">Notifiche Telegram</h4>
+            </div>
+            <div class="card-body">
+                <p>Configura le notifiche di prezzo per Telegram</p>
+                
+                <form method="POST" action="{{ url_for('update_notification_settings') }}">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-auto">
+                            <label for="notification_timeframe" class="col-form-label">Timeframe:</label>
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select" id="notification_timeframe" name="notification_timeframe">
+                                <option value="1m" {% if notification_settings and notification_settings.timeframe == '1m' %}selected{% endif %}>1 minuto</option>
+                                <option value="5m" {% if notification_settings and notification_settings.timeframe == '5m' %}selected{% endif %}>5 minuti</option>
+                                <option value="15m" {% if notification_settings and notification_settings.timeframe == '15m' %}selected{% endif %}>15 minuti</option>
+                                <option value="30m" {% if notification_settings and notification_settings.timeframe == '30m' %}selected{% endif %}>30 minuti</option>
+                                <option value="1h" {% if notification_settings and notification_settings.timeframe == '1h' %}selected{% endif %}>1 ora</option>
+                                <option value="4h" {% if notification_settings and notification_settings.timeframe == '4h' %}selected{% endif %}>4 ore</option>
+                                <option value="1d" {% if notification_settings and notification_settings.timeframe == '1d' %}selected{% endif %}>1 giorno</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="notification_enabled" name="notification_enabled" {% if notification_settings and notification_settings.enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="notification_enabled">Abilita notifiche</label>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">Salva</button>
+                        </div>
+                    </div>
+                </form>
+                {% if not user_has_telegram %}
+                <div class="alert alert-info mt-3">
+                    <i class="fab fa-telegram me-2"></i>
+                    Per ricevere notifiche, configura il tuo bot Telegram nel <a href="{{ url_for('profile') }}">profilo</a>.
+                </div>
+                {% endif %}
+            </div>
+        </div>
         {% endif %}
     </div>
 </div>
