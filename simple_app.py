@@ -21,7 +21,19 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 
 # Patch per risolvere il problema con optimize=True in savefig
+# Questa è una soluzione più completa che intercetta anche le chiamate interne
+# di matplotlib che potrebbero utilizzare il parametro optimize
+
+import matplotlib.backends.backend_agg as backend_agg
+original_print_png = backend_agg.FigureCanvasAgg.print_png
 original_savefig = plt.savefig
+
+@wraps(original_print_png)
+def safe_print_png(self, filename_or_obj, *args, **kwargs):
+    # Rimuoviamo il parametro optimize che causa problemi
+    if 'optimize' in kwargs:
+        del kwargs['optimize']
+    return original_print_png(self, filename_or_obj, *args, **kwargs)
 
 @wraps(original_savefig)
 def safe_savefig(*args, **kwargs):
@@ -30,6 +42,8 @@ def safe_savefig(*args, **kwargs):
         del kwargs['optimize']
     return original_savefig(*args, **kwargs)
 
+# Sostituiamo entrambe le funzioni
+backend_agg.FigureCanvasAgg.print_png = safe_print_png
 plt.savefig = safe_savefig
 
 # Setup logging
@@ -1622,23 +1636,26 @@ def models():
                 pin_memory=pin_memory
             )
             
-            # Set device (CPU/GPU) with automatic detection of AMD GPU with ROCm
+            # Set device (CPU/GPU) con gestione semplificata
             device = torch.device("cpu")  # Default to CPU
+            gpu_type = "CPU"
             
-            if pytorch_available:
+            try:
+                # Tentiamo solo CUDA per massima compatibilità
                 if torch.cuda.is_available():
                     device = torch.device("cuda:0")
-                    logger.debug("Using NVIDIA CUDA GPU acceleration")
-                elif hasattr(torch, 'hip') and torch.hip.is_available():
-                    device = torch.device("cuda:0")  # ROCm uses the CUDA device namespace
-                    logger.debug("Using AMD ROCm GPU acceleration")
-                elif hasattr(torch, 'mps') and torch.mps.is_available():
-                    device = torch.device("mps")
-                    logger.debug("Using Apple Metal GPU acceleration")
-                elif gpu_available and ('AMD' in gpu_type or 'Radeon' in gpu_type):
-                    logger.debug("AMD GPU detected but ROCm not available. Using CPU with optimized settings.")
-                    # Enable as many optimizations as possible even on CPU
-                    torch.set_num_threads(4)  # Use multiple CPU threads
+                    gpu_type = torch.cuda.get_device_name(0)
+                    logger.debug(f"Using NVIDIA GPU acceleration: {gpu_type}")
+                else:
+                    # Ottimizziamo per CPU
+                    num_cpu_threads = os.cpu_count() or 2
+                    torch.set_num_threads(num_cpu_threads)
+                    logger.debug(f"GPU not available. Using optimized CPU with {num_cpu_threads} threads")
+            except Exception as e:
+                logger.debug(f"Error detecting GPU: {str(e)}. Using CPU.")
+                # Assicuriamoci che device sia impostato a CPU in caso di errori
+                device = torch.device("cpu")
+# Rimuovere questa sezione obsoleta che sta causando conflitti
             
             logger.debug(f"Using device: {device}")
             
