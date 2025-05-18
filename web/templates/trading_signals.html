@@ -11,7 +11,7 @@
             <h5 class="mb-0">Crea Nuovo Segnale di Trading</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('models', mode='signals') }}">
+            <form method="POST" action="{{ url_for('create_signal_config_route') }}">
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label for="dataset_id" class="form-label">Dataset</label>
