@@ -2073,17 +2073,33 @@ def trading_signals():
             })
         
         # Ottieni le configurazioni dei segnali usando SQL raw
-        signal_configs_query = db.session.execute(db.text(
-            """SELECT sc.id, sc.config_id, sc.timeframe, sc.risk_level, 
-                      sc.auto_tp_sl, sc.telegram_enabled, sc.is_active, sc.auto_calculate,
-                      d.name as dataset_name
-               FROM signal_config sc
-               JOIN dataset d ON sc.dataset_id = d.id
-               WHERE sc.user_id = :user_id"""
-        ), {"user_id": user.id})
+        try:
+            # Prima proviamo con la colonna auto_calculate
+            signal_configs_query = db.session.execute(db.text(
+                """SELECT sc.id, sc.config_id, sc.timeframe, sc.risk_level, 
+                          sc.auto_tp_sl, sc.telegram_enabled, sc.is_active, sc.auto_calculate,
+                          d.name as dataset_name
+                   FROM signal_config sc
+                   JOIN dataset d ON sc.dataset_id = d.id
+                   WHERE sc.user_id = :user_id"""
+            ), {"user_id": user.id})
+        except Exception as e:
+            # Se non esiste la colonna auto_calculate, usiamo una versione senza quella colonna
+            logger.debug(f"Query con auto_calculate fallita: {str(e)}")
+            signal_configs_query = db.session.execute(db.text(
+                """SELECT sc.id, sc.config_id, sc.timeframe, sc.risk_level, 
+                          sc.auto_tp_sl, sc.telegram_enabled, sc.is_active,
+                          d.name as dataset_name
+                   FROM signal_config sc
+                   JOIN dataset d ON sc.dataset_id = d.id
+                   WHERE sc.user_id = :user_id"""
+            ), {"user_id": user.id})
         # Converti i risultati in una lista di dizionari
         signal_configs = []
         for row in signal_configs_query:
+            # Controlla se la query contiene la colonna auto_calculate
+            has_auto_calculate = len(row) > 8
+            
             signal_configs.append({
                 "id": row[0],
                 "config_id": row[1],
@@ -2092,8 +2108,8 @@ def trading_signals():
                 "auto_tp_sl": row[4],
                 "telegram_enabled": row[5],
                 "is_active": row[6],
-                "auto_calculate": row[7] if len(row) > 8 else True,
-                "dataset_name": row[8] if len(row) > 8 else row[7]
+                "auto_calculate": row[7] if has_auto_calculate else True,
+                "dataset_name": row[8] if has_auto_calculate else row[7]
             })
         
         # Ottieni i dataset disponibili usando SQL raw
