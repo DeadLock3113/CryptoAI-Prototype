@@ -2025,39 +2025,43 @@ def clear_data():
 def show_users():
     """Mostra le informazioni sugli utenti nel database"""
     try:
-        # Ottieni tutti gli utenti dal database
-        user_query = db.session.execute(db.text(
-            """SELECT * FROM user"""
-        ))
-        
-        users = []
-        for row in user_query:
-            user_data = {}
-            for idx, column in enumerate(user_query.keys()):
-                user_data[column] = row[idx]
-            users.append(user_data)
+        # Ottieni tutti gli utenti dal database - accesso diretto usando Flask-SQLAlchemy
+        from db_models import User
+        users = User.query.all()
         
         # Crea un output HTML
         output = "<h1>Utenti nel Database</h1>"
         output += "<table border='1'><tr>"
-        
-        # Intestazioni
-        if len(users) > 0:
-            for column in users[0].keys():
-                output += f"<th>{column}</th>"
-            output += "</tr>"
+        output += "<th>ID</th><th>Username</th><th>Email</th><th>Creato il</th>"
+        output += "</tr>"
         
         # Dati
         for user in users:
             output += "<tr>"
-            for column, value in user.items():
-                # Nascondi parte della password per sicurezza
-                if column == 'password_hash' and value:
-                    value = value[:20] + "..." if len(str(value)) > 20 else value
-                output += f"<td>{value}</td>"
+            output += f"<td>{user.id}</td>"
+            output += f"<td>{user.username}</td>"
+            output += f"<td>{user.email}</td>"
+            output += f"<td>{user.created_at}</td>"
             output += "</tr>"
         
         output += "</table>"
+        
+        # Aggiungi informazioni sulle API keys in modo generico
+        output += "<h2>Informazioni API Keys</h2>"
+        output += "<table border='1'><tr>"
+        output += "<th>Username</th><th>Binance API</th><th>Kraken API</th><th>Telegram</th>"
+        output += "</tr>"
+        
+        for user in users:
+            output += "<tr>"
+            output += f"<td>{user.username}</td>"
+            output += f"<td>{'Configurata' if user.binance_api_key else 'Non configurata'}</td>"
+            output += f"<td>{'Configurata' if user.kraken_api_key else 'Non configurata'}</td>"
+            output += f"<td>{'Configurato' if user.telegram_bot_token else 'Non configurato'}</td>"
+            output += "</tr>"
+        
+        output += "</table>"
+        
         return output
     except Exception as e:
         return f"Errore durante l'accesso ai dati utente: {str(e)}"
