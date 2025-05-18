@@ -1918,6 +1918,9 @@ def models():
     
     if dataset_id:
         selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
+        
+    # Modalità di addestramento diretta (senza visualizzatore separato)
+    direct_training = request.args.get('direct_training', type=bool, default=False)
     
     # Check for GPU availability but handle gracefully
     gpu_available = False
