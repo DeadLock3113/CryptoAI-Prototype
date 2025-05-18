@@ -63,7 +63,9 @@ added_files = [
     ('models', 'models'),
     ('strategies', 'strategies'),
     ('indicators', 'indicators'),
-    ('utils', 'utils')
+    ('utils', 'utils'),
+    ('data', 'data'),
+    ('backtesting', 'backtesting')
 ]
 
 a = Analysis(
@@ -92,7 +94,14 @@ a = Analysis(
         'email_validator',
         'gunicorn.workers',
         'trading_calendar',
-        'backtrader'
+        'backtrader',
+        'trafilatura',
+        'textblob',
+        'vadersentiment',
+        'vadersentiment.vaderSentiment',
+        'werkzeug.security',
+        'training_handler',
+        'sqlalchemy.dialects.postgresql'
     ],
     hookspath=[],
     hooksconfig={},
