@@ -34,10 +34,23 @@ class User(UserMixin, db.Model):
     strategies = db.relationship('Strategy', backref='user', lazy='dynamic')
     backtests = db.relationship('Backtest', backref='user', lazy='dynamic')
     api_profiles = db.relationship('ApiProfile', backref='user', lazy='dynamic',
-                               cascade='all, delete-orphan')
+                                  cascade='all, delete-orphan')
+    
+class NotificationSettings(db.Model):
+    """Impostazioni di notifica per l'utente"""
+    id = db.Column(db.Integer, primary_key=True)
+    timeframe = db.Column(db.String(10), default='1h')  # '1m', '5m', '15m', '30m', '1h', '4h', '1d'
+    enabled = db.Column(db.Boolean, default=False)
+    last_notification = db.Column(db.DateTime)
+    price_change_threshold = db.Column(db.Float, default=1.0)  # Percentuale di cambio per notifiche di movimento significativo
+    volume_change_threshold = db.Column(db.Float, default=20.0)  # Percentuale di cambio del volume
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    
+    # Relazione con l'utente
+    user = db.relationship('User', backref=db.backref('notification_settings', uselist=False))
     
     def __repr__(self):
-        return f'<User {self.username}>'
+        return f'<NotificationSettings id={self.id} user_id={self.user_id}>'
 
 
 class ApiProfile(db.Model):
