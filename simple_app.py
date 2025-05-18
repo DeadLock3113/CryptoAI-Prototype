@@ -2025,9 +2025,14 @@ def clear_data():
 def show_users():
     """Mostra le informazioni sugli utenti nel database"""
     try:
-        # Ottieni tutti gli utenti dal database - accesso diretto usando Flask-SQLAlchemy
-        from db_models import User
-        users = User.query.all()
+        # Ottieni tutti gli utenti dal database - usando SQL raw query
+        user_query = db.session.execute(db.text(
+            """SELECT id, username, email, created_at,
+                      (binance_api_key IS NOT NULL) as has_binance,
+                      (kraken_api_key IS NOT NULL) as has_kraken,
+                      (telegram_bot_token IS NOT NULL) as has_telegram
+               FROM user"""
+        ))
         
         # Crea un output HTML
         output = "<h1>Utenti nel Database</h1>"
@@ -2036,15 +2041,25 @@ def show_users():
         output += "</tr>"
         
         # Dati
-        for user in users:
+        for row in user_query:
             output += "<tr>"
-            output += f"<td>{user.id}</td>"
-            output += f"<td>{user.username}</td>"
-            output += f"<td>{user.email}</td>"
-            output += f"<td>{user.created_at}</td>"
+            # ID, Username, Email, Data creazione
+            output += f"<td>{row[0]}</td>"
+            output += f"<td>{row[1]}</td>"
+            output += f"<td>{row[2]}</td>"
+            output += f"<td>{row[3]}</td>"
             output += "</tr>"
         
         output += "</table>"
+        
+        # Reset della query per il secondo output
+        user_query = db.session.execute(db.text(
+            """SELECT id, username, 
+                      (binance_api_key IS NOT NULL) as has_binance,
+                      (kraken_api_key IS NOT NULL) as has_kraken,
+                      (telegram_bot_token IS NOT NULL) as has_telegram
+               FROM user"""
+        ))
         
         # Aggiungi informazioni sulle API keys in modo generico
         output += "<h2>Informazioni API Keys</h2>"
@@ -2052,15 +2067,18 @@ def show_users():
         output += "<th>Username</th><th>Binance API</th><th>Kraken API</th><th>Telegram</th>"
         output += "</tr>"
         
-        for user in users:
+        for row in user_query:
             output += "<tr>"
-            output += f"<td>{user.username}</td>"
-            output += f"<td>{'Configurata' if user.binance_api_key else 'Non configurata'}</td>"
-            output += f"<td>{'Configurata' if user.kraken_api_key else 'Non configurata'}</td>"
-            output += f"<td>{'Configurato' if user.telegram_bot_token else 'Non configurato'}</td>"
+            output += f"<td>{row[1]}</td>"  # Username
+            output += f"<td>{'Configurata' if row[2] else 'Non configurata'}</td>"
+            output += f"<td>{'Configurata' if row[3] else 'Non configurata'}</td>"
+            output += f"<td>{'Configurato' if row[4] else 'Non configurato'}</td>"
             output += "</tr>"
         
         output += "</table>"
+        
+        # Aggiungi pulsante per tornare al login
+        output += "<p><a href='/login' class='btn btn-primary'>Torna al Login</a></p>"
         
         return output
     except Exception as e:
