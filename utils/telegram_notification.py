@@ -5,10 +5,13 @@ Questo modulo fornisce funzioni per inviare notifiche Telegram
 agli utenti in base ai movimenti di prezzo delle criptovalute.
 """
 
-import requests
 import logging
+import requests
 from datetime import datetime
 
+from db_models import User, db
+
+# Configurazione logging
 logger = logging.getLogger(__name__)
 
 def send_telegram_message(bot_token, chat_id, message):
@@ -23,30 +26,37 @@ def send_telegram_message(bot_token, chat_id, message):
     Returns:
         bool: True se l'invio è avvenuto con successo, False altrimenti
     """
-    if not bot_token or not chat_id:
-        logger.warning("Bot token o chat ID mancanti. Impossibile inviare notifica Telegram.")
-        return False
-    
     try:
+        # Controllo che token e chat_id siano validi
+        if not bot_token or not chat_id:
+            logger.error("Token o chat_id mancanti")
+            return False
+        
+        # Prepara l'URL per l'API di Telegram
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        
+        # Prepara i dati per la richiesta
         data = {
             "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML"
         }
         
-        response = requests.post(url, data=data, timeout=5)
+        # Invia la richiesta
+        response = requests.post(url, data=data, timeout=10)
         
+        # Verifica la risposta
         if response.status_code == 200:
             logger.info(f"Messaggio Telegram inviato con successo a {chat_id}")
             return True
         else:
-            logger.error(f"Errore nell'invio del messaggio Telegram: {response.status_code}, {response.text}")
+            logger.error(f"Errore nell'invio del messaggio Telegram: {response.text}")
             return False
-            
+    
     except Exception as e:
-        logger.error(f"Errore durante l'invio del messaggio Telegram: {str(e)}")
+        logger.error(f"Errore nell'invio del messaggio Telegram: {str(e)}")
         return False
+
 
 def send_price_alert(user, symbol, price, alert_type, change_percent=None):
     """
@@ -62,48 +72,70 @@ def send_price_alert(user, symbol, price, alert_type, change_percent=None):
     Returns:
         bool: True se l'invio è avvenuto con successo, False altrimenti
     """
-    if not user or not user.telegram_bot_token or not user.telegram_chat_id:
+    try:
+        # Controllo che l'utente abbia le credenziali Telegram
+        if not user or not user.telegram_bot_token or not user.telegram_chat_id:
+            logger.error(f"Credenziali Telegram mancanti per l'utente {user.id if user else 'None'}")
+            return False
+        
+        # Prepara il messaggio in base al tipo di allerta
+        if alert_type == 'new_high':
+            emoji = "🔺"
+            title = f"{emoji} NUOVO MASSIMO {emoji}"
+            message = f"{title}\n\n"
+            message += f"Il prezzo di {symbol} ha raggiunto un nuovo massimo!\n"
+            message += f"Prezzo attuale: {price:.5g}"
+            
+        elif alert_type == 'new_low':
+            emoji = "🔻"
+            title = f"{emoji} NUOVO MINIMO {emoji}"
+            message = f"{title}\n\n"
+            message += f"Il prezzo di {symbol} ha raggiunto un nuovo minimo!\n"
+            message += f"Prezzo attuale: {price:.5g}"
+            
+        elif alert_type == 'threshold':
+            # Determina se è un movimento positivo o negativo
+            if change_percent and change_percent > 0:
+                emoji = "📈"
+                title = f"{emoji} MOVIMENTO IMPORTANTE {emoji}"
+                movement = "aumentato"
+            elif change_percent and change_percent < 0:
+                emoji = "📉"
+                title = f"{emoji} MOVIMENTO IMPORTANTE {emoji}"
+                movement = "diminuito"
+                change_percent = abs(change_percent)  # Rendiamo positivo per la visualizzazione
+            else:
+                emoji = "⚠️"
+                title = f"{emoji} ALLERTA PREZZO {emoji}"
+                movement = "cambiato"
+                change_percent = 0
+            
+            message = f"{title}\n\n"
+            message += f"Il prezzo di {symbol} è {movement} del {change_percent:.2f}%!\n"
+            message += f"Prezzo attuale: {price:.5g}"
+            
+        else:  # 'update' o default
+            emoji = "ℹ️"
+            title = f"{emoji} AGGIORNAMENTO PREZZO {emoji}"
+            message = f"{title}\n\n"
+            message += f"Aggiornamento prezzo per {symbol}\n"
+            message += f"Prezzo attuale: {price:.5g}"
+            
+            if change_percent is not None:
+                # Aggiungi freccia in base al movimento
+                arrow = "↗️" if change_percent > 0 else "↘️" if change_percent < 0 else "↔️"
+                message += f"\nVariazione: {arrow} {change_percent:.2f}%"
+        
+        # Aggiungi data e ora
+        message += f"\nData: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+        
+        # Invia il messaggio
+        return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+    
+    except Exception as e:
+        logger.error(f"Errore nell'invio dell'allerta di prezzo: {str(e)}")
         return False
-    
-    # Timestamp corrente
-    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-    
-    # Costruisci il messaggio in base al tipo di allerta
-    if alert_type == 'new_high':
-        message = f"🔺 <b>NUOVO MASSIMO per {symbol}</b> 🔺\n\n"
-        message += f"Prezzo: <b>{price:.8f}</b>\n"
-        message += f"Variazione: <b>+{change_percent:.2f}%</b>\n"
-        message += f"Data: {now}\n"
-    
-    elif alert_type == 'new_low':
-        message = f"🔻 <b>NUOVO MINIMO per {symbol}</b> 🔻\n\n"
-        message += f"Prezzo: <b>{price:.8f}</b>\n"
-        message += f"Variazione: <b>{change_percent:.2f}%</b>\n"
-        message += f"Data: {now}\n"
-    
-    elif alert_type == 'threshold':
-        direction = "🔺" if change_percent > 0 else "🔻"
-        message = f"{direction} <b>MOVIMENTO SIGNIFICATIVO per {symbol}</b> {direction}\n\n"
-        message += f"Prezzo: <b>{price:.8f}</b>\n"
-        message += f"Variazione: <b>{change_percent:+.2f}%</b>\n"
-        message += f"Data: {now}\n"
-    
-    elif alert_type == 'update':
-        # Notifica di aggiornamento prezzo normale
-        emoji = "🟢" if change_percent >= 0 else "🔴"
-        message = f"{emoji} <b>Aggiornamento {symbol}</b>\n\n"
-        message += f"Prezzo: <b>{price:.8f}</b>\n"
-        message += f"Variazione: <b>{change_percent:+.2f}%</b>\n"
-        message += f"Data: {now}\n"
-    
-    else:
-        # Tipo di messaggio generico
-        message = f"<b>Aggiornamento {symbol}</b>\n\n"
-        message += f"Prezzo: <b>{price:.8f}</b>\n"
-        message += f"Data: {now}\n"
-    
-    # Invia il messaggio Telegram
-    return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+
 
 def send_balance_update(user, balance_info):
     """
@@ -116,27 +148,44 @@ def send_balance_update(user, balance_info):
     Returns:
         bool: True se l'invio è avvenuto con successo, False altrimenti
     """
-    if not user or not user.telegram_bot_token or not user.telegram_chat_id:
+    try:
+        # Controllo che l'utente abbia le credenziali Telegram
+        if not user or not user.telegram_bot_token or not user.telegram_chat_id:
+            logger.error(f"Credenziali Telegram mancanti per l'utente {user.id if user else 'None'}")
+            return False
+        
+        # Prepara il messaggio
+        emoji = "💰"
+        title = f"{emoji} AGGIORNAMENTO SALDO {emoji}"
+        message = f"{title}\n\n"
+        
+        # Aggiungi il saldo totale
+        total_balance_eur = balance_info.get('total_balance_eur', 0)
+        total_balance_usdt = balance_info.get('total_balance_usdt', 0)
+        
+        message += f"Saldo Totale: {total_balance_eur:.2f} EUR ({total_balance_usdt:.2f} USDT)\n\n"
+        
+        # Aggiungi le valute
+        message += "Dettaglio saldo:\n"
+        for currency, amount in balance_info.get('currencies', {}).items():
+            # Ignora valute con saldo 0
+            if amount > 0.00001:
+                eur_value = balance_info.get('currency_values', {}).get(currency, 0)
+                message += f"• {currency}: {amount:.6g}"
+                if eur_value > 0:
+                    message += f" ({eur_value:.2f} EUR)"
+                message += "\n"
+        
+        # Aggiungi data e ora
+        message += f"\nData: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+        
+        # Invia il messaggio
+        return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+    
+    except Exception as e:
+        logger.error(f"Errore nell'invio dell'aggiornamento del saldo: {str(e)}")
         return False
-    
-    # Timestamp corrente
-    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-    
-    # Costruisci il messaggio con le informazioni di saldo
-    message = f"💰 <b>AGGIORNAMENTO SALDO</b> 💰\n\n"
-    
-    # Aggiungi saldo totale
-    message += f"Saldo totale: <b>{balance_info['total_balance']:.2f} USDT</b>\n\n"
-    
-    # Aggiungi dettagli per ogni valuta
-    message += "<b>Dettaglio:</b>\n"
-    for currency, amount in balance_info['currencies'].items():
-        message += f"- {currency}: <b>{amount:.8f}</b>\n"
-    
-    message += f"\nData: {now}\n"
-    
-    # Invia il messaggio Telegram
-    return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+
 
 def send_signal_notification(user_id, message_text):
     """
@@ -150,20 +199,20 @@ def send_signal_notification(user_id, message_text):
         bool: True se l'invio è avvenuto con successo, False altrimenti
     """
     try:
-        # Importa i modelli necessari
-        from db_models import User
-        from app import db
-        
-        # Ottieni l'utente dal database
+        # Ottieni l'utente
         user = User.query.get(user_id)
-        
-        if not user or not user.telegram_bot_token or not user.telegram_chat_id:
-            logger.warning(f"Utente {user_id} non ha configurato Telegram")
+        if not user:
+            logger.error(f"Utente non trovato con ID {user_id}")
             return False
         
-        # Invia il messaggio già formattato
-        return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message_text)
+        # Controllo che l'utente abbia le credenziali Telegram
+        if not user.telegram_bot_token or not user.telegram_chat_id:
+            logger.error(f"Credenziali Telegram mancanti per l'utente {user_id}")
+            return False
         
+        # Invia il messaggio
+        return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message_text)
+    
     except Exception as e:
         logger.error(f"Errore nell'invio della notifica di segnale: {str(e)}")
         return False
