@@ -13,64 +13,11 @@ import matplotlib.pyplot as plt
 import io
 import base64
 import uuid
-import math
-import random
-import json
 from datetime import datetime
-
-# Controlla se siamo in modalità deploy
-IS_DEPLOYED = os.environ.get('REPLIT_DEPLOYMENT') == '1'
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from functools import wraps
-
-# Importa le classi del database
-from db_models import User, Dataset, PriceData, Indicator, Strategy, Backtest, MLModel, Prediction, ApiProfile
-
-# Import utility modules
-from utils.telegram_notification import send_price_alert, send_balance_update
-from utils.exchange_api import get_account_balances, ExchangeAPIError
-from utils.exchange_data_fetcher import get_historical_data, get_available_symbols, save_historical_data
-from utils.sentiment_analyzer import SentimentAnalyzer, generate_sample_news_data
-
-# Importa il gestore dell'addestramento
-import training_handler
-
-# Importa le strategie e l'ottimizzatore
-from strategies.custom_strategy import CustomStrategy, CustomStrategyBuilder, TradingSignal
-from strategies.strategy_optimizer import StrategyOptimizer
-
-# Importa il generatore di segnali di trading
-from utils.signal_generator import create_signal_config, get_signal_config, start_signal_generator, stop_signal_generator, delete_signal_config, get_user_signal_configs
-
-# Patch per risolvere il problema con optimize=True in savefig
-# Questa è una soluzione più completa che intercetta anche le chiamate interne
-# di matplotlib che potrebbero utilizzare il parametro optimize
-
-import matplotlib.backends.backend_agg as backend_agg
-original_print_png = backend_agg.FigureCanvasAgg.print_png
-original_savefig = plt.savefig
-
-@wraps(original_print_png)
-def safe_print_png(self, filename_or_obj, *args, **kwargs):
-    # Rimuoviamo il parametro optimize che causa problemi
-    if 'optimize' in kwargs:
-        del kwargs['optimize']
-    return original_print_png(self, filename_or_obj, *args, **kwargs)
-
-@wraps(original_savefig)
-def safe_savefig(*args, **kwargs):
-    # Rimuoviamo il parametro optimize che causa problemi
-    if 'optimize' in kwargs:
-        del kwargs['optimize']
-    return original_savefig(*args, **kwargs)
-
-# Sostituiamo entrambe le funzioni
-backend_agg.FigureCanvasAgg.print_png = safe_print_png
-plt.savefig = safe_savefig
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -98,52 +45,6 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Initialize database
 db = SQLAlchemy(app)
 
-# Funzione per aggiornare lo schema del database
-def update_database_schema():
-    """Aggiorna lo schema del database con le nuove colonne e tabelle."""
-    with app.app_context():
-        # Controlla se le colonne sono già presenti
-        inspector = inspect(db.engine)
-        existing_tables = inspector.get_table_names()
-        logger.info(f"Tabelle esistenti: {existing_tables}")
-        
-        # Crea tutte le tabelle se non esistono
-        try:
-            db.create_all()
-            logger.info("Tabelle create/aggiornate con successo")
-        except Exception as e:
-            logger.error(f"Errore nella creazione delle tabelle: {str(e)}")
-        
-        # Dopo aver creato le tabelle, verifichiamo le colonne
-        user_columns = [col['name'] for col in inspector.get_columns('user')]
-        
-        # Aggiungi le colonne mancanti
-        missing_columns = []
-        if 'binance_api_key' not in user_columns:
-            missing_columns.append('binance_api_key VARCHAR(256)')
-        if 'binance_api_secret' not in user_columns:
-            missing_columns.append('binance_api_secret VARCHAR(256)')
-        if 'kraken_api_key' not in user_columns:
-            missing_columns.append('kraken_api_key VARCHAR(256)')
-        if 'kraken_api_secret' not in user_columns:
-            missing_columns.append('kraken_api_secret VARCHAR(256)')
-        if 'telegram_bot_token' not in user_columns:
-            missing_columns.append('telegram_bot_token VARCHAR(256)')
-        if 'telegram_chat_id' not in user_columns:
-            missing_columns.append('telegram_chat_id VARCHAR(256)')
-        
-        # Esegui l'ALTER TABLE se ci sono colonne mancanti
-        if missing_columns:
-            for column_def in missing_columns:
-                try:
-                    sql = text(f"ALTER TABLE user ADD COLUMN {column_def}")
-                    with db.engine.connect() as conn:
-                        conn.execute(sql)
-                        conn.commit()
-                except Exception as e:
-                    print(f"Errore nell'aggiungere la colonna {column_def}: {str(e)}")
-            print("Schema database aggiornato con successo.")
-
 # Cache in-memory per migliorare le performance
 _memory_cache = {}
 
@@ -155,19 +56,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Exchange API keys
-    binance_api_key = db.Column(db.String(256), nullable=True)
-    binance_api_secret = db.Column(db.String(256), nullable=True)
-    kraken_api_key = db.Column(db.String(256), nullable=True)
-    kraken_api_secret = db.Column(db.String(256), nullable=True)
-    
-    # Telegram notification settings
-    telegram_bot_token = db.Column(db.String(256), nullable=True)
-    telegram_chat_id = db.Column(db.String(256), nullable=True)
-    
     datasets = db.relationship('Dataset', backref='user', lazy='dynamic')
-    notification_settings = db.relationship('NotificationSettings', backref='user', uselist=False, cascade='all, delete-orphan')
-    api_profiles = db.relationship('ApiProfile', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
     def is_authenticated(self):
         return True
@@ -180,30 +69,6 @@ class User(db.Model):
         
     def get_id(self):
         return str(self.id)
-
-class NotificationSettings(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timeframe = db.Column(db.String(10), default='1h')  # '1m', '5m', '15m', '30m', '1h', '4h', '1d'
-    enabled = db.Column(db.Boolean, default=False)
-    last_notification = db.Column(db.DateTime)
-    
-    # Threshold settings
-    price_change_threshold = db.Column(db.Float, default=1.0)  # Percentuale di cambio per notifiche di movimento significativo
-    volume_change_threshold = db.Column(db.Float, default=20.0)  # Percentuale di cambio del volume
-    
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
-
-class ApiProfile(db.Model):
-    """Modello per i profili delle API degli exchange"""
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), nullable=False)
-    data = db.Column(db.JSON, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    
-    def __repr__(self):
-        return f'<ApiProfile {self.name}>'
 
 class Dataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -221,21 +86,20 @@ class Dataset(db.Model):
 # Create database tables
 with app.app_context():
     db.create_all()
-    # Esegui l'aggiornamento dello schema per aggiungere le nuove colonne
-    update_database_schema()
 
 # Helper functions
 def get_current_user():
     """Get current user from session"""
     if 'user_id' in session:
-        # Ottieni un fresh object dal database per evitare problemi di "detached instance"
-        try:
-            # Disabilita la cache per evitare problemi di sessione scaduta
-            user = User.query.filter_by(id=session['user_id']).first()
-            if user:
-                return user
-        except Exception as e:
-            logger.error(f"Errore nel recupero dell'utente: {str(e)}")
+        # Usiamo la cache per gli utenti
+        user_cache_key = f"user_{session['user_id']}"
+        if user_cache_key in _memory_cache:
+            return _memory_cache[user_cache_key]
+            
+        user = User.query.get(session['user_id'])
+        if user:
+            _memory_cache[user_cache_key] = user
+            return user
     return None
 
 def load_dataset(dataset_id):
@@ -336,11 +200,11 @@ def generate_price_chart(data, symbol, resolution='full'):
         
         # Save plot to buffer with optimized settings
         buffer = io.BytesIO()
-        # Parametri ridotti per evitare errori con optimize
-        plt.savefig(buffer, format='png', dpi=dpi)
+        plt.savefig(buffer, format='png', dpi=dpi, bbox_inches='tight', 
+                   transparent=False)
         buffer.seek(0)
         
-        # Convert plot to base64
+        # Convert plot to base64 with optimized compression
         chart_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
         plt.close(fig)
         
@@ -353,54 +217,7 @@ def generate_price_chart(data, symbol, resolution='full'):
 @app.route('/')
 def index():
     """Home page"""
-    user = get_current_user()
-    
-    account_balance = None
-    notification_settings = None
-    user_has_telegram = False
-    
-    if user:
-        # Verifica se l'utente ha configurato le notifiche Telegram
-        user_has_telegram = bool(user.telegram_bot_token and user.telegram_chat_id)
-        
-        # Ottieni le impostazioni di notifica dell'utente
-        notification_settings = NotificationSettings.query.filter_by(user_id=user.id).first()
-        
-        # Se non esistono impostazioni, creale con valori predefiniti
-        if not notification_settings:
-            notification_settings = NotificationSettings(
-                user_id=user.id,
-                timeframe='1h',
-                enabled=False
-            )
-            db.session.add(notification_settings)
-            db.session.commit()
-        
-        # Tenta di ottenere il saldo dell'account dagli exchange configurati
-        try:
-            if user.binance_api_key or user.kraken_api_key:
-                # Ottieni il saldo degli account dalle API
-                account_balance = get_account_balances(user)
-                logger.info(f"Saldo ottenuto dalle API degli exchange per l'utente {user.id}")
-            else:
-                # Se l'utente non ha configurato le API, mostra un messaggio
-                account_balance = None
-                flash('Per visualizzare il tuo saldo reale, configura le API degli exchange nel tuo profilo.', 'warning')
-                logger.info(f"Utente {user.id} non ha configurato le API degli exchange")
-                
-            # Log per debug
-            logger.debug(f"Account balance: {account_balance}")
-        except ExchangeAPIError as e:
-            flash(f'Errore nel recuperare il saldo dell\'account: {str(e)}', 'danger')
-            logger.error(f"Errore API exchange per l'utente {user.id}: {str(e)}")
-    
-    return render_template(
-        'index.html', 
-        current_user=user,
-        account_balance=account_balance,
-        notification_settings=notification_settings,
-        user_has_telegram=user_has_telegram
-    )
+    return render_template('index.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -464,27 +281,11 @@ def register():
             flash('Email già registrata. Utilizza un\'altra email.', 'danger')
             return redirect(url_for('register'))
             
-        # Ottieni i dati delle API degli exchange (opzionali)
-        binance_api_key = request.form.get('binance_api_key')
-        binance_api_secret = request.form.get('binance_api_secret')
-        kraken_api_key = request.form.get('kraken_api_key')
-        kraken_api_secret = request.form.get('kraken_api_secret')
-        
-        # Ottieni i dati di Telegram (opzionali)
-        telegram_bot_token = request.form.get('telegram_bot_token')
-        telegram_chat_id = request.form.get('telegram_chat_id')
-        
         # Create new user
         new_user = User(
             username=username,
             email=email,
-            password_hash=generate_password_hash(password),
-            binance_api_key=binance_api_key,
-            binance_api_secret=binance_api_secret,
-            kraken_api_key=kraken_api_key,
-            kraken_api_secret=kraken_api_secret,
-            telegram_bot_token=telegram_bot_token,
-            telegram_chat_id=telegram_chat_id
+            password_hash=generate_password_hash(password)
         )
         
         # Add user to database
@@ -506,54 +307,28 @@ def profile():
         return redirect(url_for('login', next=request.url))
     
     if request.method == 'POST':
-        # Controlla il tipo di form inviato
-        form_type = request.form.get('form_type', 'user_info')
+        # Update user information
+        username = request.form['username']
+        email = request.form['email']
         
-        if form_type == 'api_settings':
-            # Aggiorna le impostazioni API
+        # Check if username or email is already taken (by another user)
+        if username != user.username and User.query.filter_by(username=username).first():
+            flash('Username già in uso. Scegli un altro username.', 'danger')
+            return redirect(url_for('profile'))
             
-            # API Binance
-            user.binance_api_key = request.form.get('binance_api_key', '')
-            user.binance_api_secret = request.form.get('binance_api_secret', '')
+        if email != user.email and User.query.filter_by(email=email).first():
+            flash('Email già registrata. Utilizza un\'altra email.', 'danger')
+            return redirect(url_for('profile'))
             
-            # API Kraken
-            user.kraken_api_key = request.form.get('kraken_api_key', '')
-            user.kraken_api_secret = request.form.get('kraken_api_secret', '')
-            
-            # Impostazioni Telegram
-            user.telegram_bot_token = request.form.get('telegram_bot_token', '')
-            user.telegram_chat_id = request.form.get('telegram_chat_id', '')
-            
-            # Salva le modifiche
-            db.session.commit()
-            
-            flash('Impostazioni API aggiornate con successo!', 'success')
-            
-        else:
-            # Aggiorna le informazioni utente
-            username = request.form['username']
-            email = request.form['email']
-            
-            # Check if username or email is already taken (by another user)
-            if username != user.username and User.query.filter_by(username=username).first():
-                flash('Username già in uso. Scegli un altro username.', 'danger')
-                return redirect(url_for('profile'))
-                
-            if email != user.email and User.query.filter_by(email=email).first():
-                flash('Email già registrata. Utilizza un\'altra email.', 'danger')
-                return redirect(url_for('profile'))
-                
-            # Update user
-            user.username = username
-            user.email = email
-            
-            # Save changes
-            db.session.commit()
-            
-            # Update session
-            session['username'] = username
-            
-            flash('Informazioni utente aggiornate con successo!', 'success')
+        # Update user
+        user.username = username
+        user.email = email
+        
+        # Save changes
+        db.session.commit()
+        
+        # Update session
+        session['username'] = username
         
         flash('Profilo aggiornato con successo!', 'success')
         return redirect(url_for('profile'))
@@ -561,21 +336,7 @@ def profile():
     # Get user's datasets
     datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
     
-    # Pass user's API keys and Telegram settings to the template
-    api_settings = {
-        'binance_api_key': user.binance_api_key or '',
-        'binance_api_secret': user.binance_api_secret or '',
-        'kraken_api_key': user.kraken_api_key or '',
-        'kraken_api_secret': user.kraken_api_secret or '',
-        'telegram_bot_token': user.telegram_bot_token or '',
-        'telegram_chat_id': user.telegram_chat_id or ''
-    }
-    
-    return render_template('profile.html', 
-                          datasets=datasets, 
-                          backtests=[], 
-                          models=[], 
-                          api_settings=api_settings)
+    return render_template('profile.html', datasets=datasets, backtests=[], models=[])
 
 @app.route('/change_password', methods=['POST'])
 def change_password():
@@ -611,159 +372,6 @@ def change_password():
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    """Data upload page"""
-    # Check if user is logged in
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Redirect alla nuova interfaccia unificata per upload e acquisizione dati
-    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
-    return render_template('fetch_exchange_data.html', datasets=user_datasets)
-        
-@app.route('/fetch_exchange_data', methods=['GET', 'POST'])
-def fetch_exchange_data():
-    """Pagina per scaricare dati storici dagli exchange usando le API"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Ottieni i dataset esistenti dell'utente
-    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
-    
-    if request.method == 'POST':
-        # Ottieni i parametri dalla richiesta
-        exchange = request.form.get('exchange', '').lower()
-        symbol = request.form.get('symbol', '')
-        interval = request.form.get('interval', '1h')
-        dataset_name = request.form.get('dataset_name', '')
-        description = request.form.get('description', '')
-        use_api_keys = request.form.get('use_api_keys') == 'on'
-        
-        # Ottieni le date di inizio e fine se specificate
-        start_date_str = request.form.get('start_date')
-        end_date_str = request.form.get('end_date')
-        
-        start_date = None
-        end_date = None
-        
-        if start_date_str:
-            try:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            except ValueError:
-                flash('Formato data inizio non valido. Usa YYYY-MM-DD.', 'danger')
-                return redirect(url_for('fetch_exchange_data'))
-        
-        if end_date_str:
-            try:
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-                # Imposta l'ora a 23:59:59 per includere l'intero giorno
-                end_date = end_date.replace(hour=23, minute=59, second=59)
-            except ValueError:
-                flash('Formato data fine non valido. Usa YYYY-MM-DD.', 'danger')
-                return redirect(url_for('fetch_exchange_data'))
-        
-        # Valida i parametri
-        if not (exchange and symbol and interval and dataset_name):
-            flash('Tutti i campi obbligatori devono essere compilati.', 'danger')
-            return redirect(url_for('fetch_exchange_data'))
-        
-        # Verifica che il dataset con lo stesso nome non esista già
-        existing_dataset = Dataset.query.filter_by(user_id=user.id, name=dataset_name).first()
-        if existing_dataset:
-            flash(f'Esiste già un dataset con il nome "{dataset_name}". Scegli un nome diverso.', 'danger')
-            return redirect(url_for('fetch_exchange_data'))
-        
-        # Prepara le API key se necessario
-        api_key = None
-        api_secret = None
-        
-        if use_api_keys:
-            if exchange == 'binance' and user.binance_api_key and user.binance_api_secret:
-                api_key = user.binance_api_key
-                api_secret = user.binance_api_secret
-            elif exchange == 'kraken' and user.kraken_api_key and user.kraken_api_secret:
-                api_key = user.kraken_api_key
-                api_secret = user.kraken_api_secret
-        
-        try:
-            # Ottieni i dati storici dall'exchange
-            logger.info(f"Avvio download dati da {exchange} per {symbol} con intervallo {interval}")
-            
-            df = get_historical_data(
-                exchange=exchange,
-                symbol=symbol,
-                interval=interval,
-                start_time=start_date,
-                end_time=end_date,
-                api_key=api_key,
-                api_secret=api_secret,
-                fallback_to_sample=True
-            )
-            
-            # Verifica che ci siano dati
-            if df.empty:
-                flash(f'Nessun dato disponibile per {symbol} nel periodo specificato.', 'warning')
-                return redirect(url_for('fetch_exchange_data'))
-            
-            logger.info(f"Scaricati {len(df)} record per {symbol}")
-            
-            # Crea la directory per salvare il file
-            upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], str(user.id))
-            os.makedirs(upload_dir, exist_ok=True)
-            
-            # Genera un nome file univoco
-            file_uuid = uuid.uuid4().hex
-            file_path = os.path.join(upload_dir, f"{file_uuid}.csv")
-            
-            # Salva i dati
-            save_historical_data(df, file_path)
-            
-            # Crea il dataset nel database
-            if not description:
-                description = f"Dati scaricati da {exchange} per {symbol}, interval: {interval}, creato il {datetime.now().strftime('%Y-%m-%d')}"
-            
-            new_dataset = Dataset(
-                name=dataset_name,
-                symbol=symbol,
-                description=description,
-                file_path=file_path,
-                rows_count=len(df),
-                start_date=df.index.min().to_pydatetime() if not df.empty else None,
-                end_date=df.index.max().to_pydatetime() if not df.empty else None,
-                user_id=user.id
-            )
-            
-            db.session.add(new_dataset)
-            db.session.commit()
-            
-            flash(f'Dataset "{dataset_name}" con {len(df)} record creato con successo!', 'success')
-            return redirect(url_for('analysis', dataset_id=new_dataset.id))
-            
-        except Exception as e:
-            logger.error(f"Errore durante il download dei dati: {str(e)}")
-            flash(f'Errore durante il download dei dati: {str(e)}', 'danger')
-            return redirect(url_for('fetch_exchange_data'))
-    
-    return render_template('fetch_exchange_data.html', datasets=user_datasets)
-
-@app.route('/api/exchange_symbols')
-def exchange_symbols_api():
-    """API per ottenere i simboli disponibili su un exchange"""
-    exchange = request.args.get('exchange', 'binance')
-    
-    try:
-        symbols = get_available_symbols(exchange)
-        return jsonify({'symbols': symbols})
-    except Exception as e:
-        logger.error(f"Errore nel recupero dei simboli: {str(e)}")
-        return jsonify({'error': str(e), 'symbols': []})
-        
-@app.route('/upload', methods=['GET', 'POST'])
-def upload_original():
     """Data upload page"""
     # Check if user is logged in
     user = get_current_user()
@@ -940,40 +548,6 @@ def upload_original():
             return redirect(request.url)
     
     return render_template('upload.html')
-
-@app.route('/delete_dataset/<int:dataset_id>', methods=['POST'])
-def delete_dataset(dataset_id):
-    """Elimina un dataset e tutti i dati associati"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa funzionalità.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Ottieni il dataset
-    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
-    
-    try:
-        # Elimina il file dal filesystem
-        if dataset.file_path and os.path.exists(dataset.file_path):
-            os.remove(dataset.file_path)
-        
-        # Memorizza il nome per il messaggio di conferma
-        dataset_name = dataset.name
-        
-        # Elimina il dataset dal database
-        # SQLAlchemy si occuperà di eliminare i dati correlati grazie alle relazioni cascade
-        db.session.delete(dataset)
-        db.session.commit()
-        
-        flash(f'Dataset "{dataset_name}" eliminato con successo.', 'success')
-    except Exception as e:
-        db.session.rollback()
-        flash(f'Errore durante l\'eliminazione del dataset: {str(e)}', 'danger')
-        logger.error(f"Errore durante l'eliminazione del dataset {dataset_id}: {str(e)}")
-    
-    # Reindirizza alla pagina di analisi
-    return redirect('/analysis')
 
 @app.route('/analysis')
 @app.route('/analysis/<int:dataset_id>')
@@ -1326,8 +900,8 @@ def indicators():
                     else:
                         dpi = 100  # DPI standard per dataset normali
                     
-                    # Parametri ridotti per evitare errori
-                    plt.savefig(buffer, format='png', dpi=dpi)
+                    plt.savefig(buffer, format='png', dpi=dpi, 
+                               bbox_inches='tight', pad_inches=0.1)
                     buffer.seek(0)
                     
                     # Convert plot to base64 for embedding in HTML
@@ -1773,249 +1347,6 @@ def backtest():
                           user_datasets=user_datasets,
                           selected_dataset=selected_dataset)
 
-@app.route('/training-visualizer/<string:training_id>')
-def training_visualizer(training_id):
-    """Pagina del visualizzatore interattivo di addestramento"""
-    # Otteniamo l'utente corrente
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Verifichiamo i dati dalla sessione flask
-    training_data = session.get('training_data', {})
-    if not training_data:
-        flash('Dati di addestramento non trovati. Crea un nuovo modello.', 'warning')
-        return redirect(url_for('models'))
-    
-    # Modalità demo fissa per prevenire blocchi
-    model_type = training_data.get('model_type', 'lstm')
-    dataset_id = training_data.get('dataset_id')
-    dataset_name = training_data.get('dataset_name', 'Dataset')
-    model_name = training_data.get('model_name', f"{model_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
-    epochs = training_data.get('epochs', 10)
-    
-    # Creazione immediata del modello in modalità demo (offline)
-    # In questo modo, non c'è bisogno di SSE o connessioni in tempo reale
-    try:
-        # Metriche simulate per il modello
-        model_metrics = {
-            'train_loss': 0.007,
-            'val_loss': 0.009,
-            'test_loss': 0.010,
-            'mse': 0.009,
-            'rmse': 0.095,
-            'mae': 0.086,
-            'r2': 0.92,
-            'epochs_completed': epochs
-        }
-        
-        # Parametri del modello
-        model_params = {
-            'input_size': 1,
-            'hidden_size': 50,
-            'num_layers': 2,
-            'output_size': 1,
-            'dropout': 0.2,
-            'lookback': training_data.get('lookback', 30)
-        }
-        
-        # Crea nuovo modello direttamente nel database usando SQL
-        try:
-            # Inserisci il modello usando SQL diretto invece di ORM
-            with db.engine.connect() as conn:
-                conn.execute(
-                    text("""INSERT INTO ml_model 
-                    (name, model_type, parameters, metrics, created_at, user_id, dataset_id)
-                    VALUES (:name, :model_type, :parameters, :metrics, :created_at, :user_id, :dataset_id)"""),
-                    {
-                        "name": model_name,
-                        "model_type": model_type,
-                        "parameters": json.dumps(model_params),
-                        "metrics": json.dumps(model_metrics),
-                        "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-                        "user_id": user.id,
-                        "dataset_id": dataset_id
-                    }
-                )
-                conn.commit()
-            logger.info(f"Modello {model_name} salvato con successo")
-        except Exception as e:
-            logger.error(f"Errore durante il salvataggio del modello: {str(e)}")
-            if "no such table: ml_model" in str(e):
-                # Crea la tabella se non esiste
-                with db.engine.connect() as conn:
-                    conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS ml_model (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name VARCHAR(128) NOT NULL,
-                        model_type VARCHAR(50) NOT NULL,
-                        parameters TEXT,
-                        metrics TEXT,
-                        model_path VARCHAR(256),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        user_id INTEGER NOT NULL,
-                        dataset_id INTEGER
-                    )
-                    """))
-                    # Prova di nuovo a inserire il modello
-                    conn.execute(
-                        text("""INSERT INTO ml_model 
-                        (name, model_type, parameters, metrics, created_at, user_id, dataset_id)
-                        VALUES (:name, :model_type, :parameters, :metrics, :created_at, :user_id, :dataset_id)"""),
-                        {
-                            "name": model_name,
-                            "model_type": model_type,
-                            "parameters": json.dumps(model_params),
-                            "metrics": json.dumps(model_metrics),
-                            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-                            "user_id": user.id,
-                            "dataset_id": dataset_id
-                        }
-                    )
-                    conn.commit()
-                logger.info("Tabella ml_model creata e modello salvato con successo")
-            else:
-                # Se l'errore è diverso, rilancia l'eccezione
-                raise
-        
-        flash(f'Modello "{model_name}" creato con successo in modalità semplificata!', 'success')
-        
-        # Reindirizza alla pagina dei modelli anziché gestire la visualizzazione
-        return redirect(url_for('models', dataset_id=dataset_id))
-        
-    except Exception as e:
-        flash(f'Errore durante la creazione del modello: {str(e)}', 'danger')
-        return redirect(url_for('models'))
-    
-    # Questo codice non viene mai eseguito (per sicurezza)
-    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
-    
-    return render_template(
-        'models_training.html',
-        user_datasets=user_datasets,
-        training_id=training_id,
-        model_type=model_type,
-        model_name=model_name,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
-        epochs=epochs,
-        batch_size=training_data.get('batch_size', 32),
-        lookback=training_data.get('lookback', 30),
-        learning_rate=training_data.get('learning_rate', 0.001),
-        device='cpu',
-        demo_mode=not IS_DEPLOYED  # Modalità demo solo se non siamo in deploy
-    )
-
-@app.route('/training-progress/<string:training_id>')
-def training_progress(training_id):
-    """Endpoint SSE per gli aggiornamenti in tempo reale dell'addestramento"""
-    # Verifica che l'utente sia autenticato
-    user = get_current_user()
-    if not user:
-        return Response(json.dumps({'error': 'Not authenticated'}), 
-                      content_type='application/json',
-                      status=401)
-    
-    def event_stream():
-        import time
-        
-        # Invia un evento iniziale
-        yield f"event: connection_established\ndata: {json.dumps({'training_id': training_id})}\n\n"
-        
-        # Simulazione di eventi di addestramento
-        # Questo è più stabile rispetto all'approccio precedente
-        yield f"event: training_started\ndata: {json.dumps({'message': 'Addestramento avviato'})}\n\n"
-        
-        # Parametri di simulazione
-        max_epochs = 10
-        current_loss = 0.5
-        val_loss = 0.6
-        elapsed_time = 0
-        
-        # Simuliamo un ciclo di addestramento fisso
-        for epoch in range(1, max_epochs + 1):
-            # Simula attività di calcolo
-            time.sleep(1)
-            elapsed_time += 1
-            
-            # Simula progressi nell'addestramento
-            reduction_factor = epoch / max_epochs
-            current_loss = max(0.05, 0.5 * (1 - reduction_factor * 0.8))
-            val_loss = max(0.07, 0.6 * (1 - reduction_factor * 0.75))
-            
-            # Invia l'aggiornamento dell'epoca
-            data = {
-                'epoch': epoch,
-                'total_epochs': max_epochs,
-                'train_loss': current_loss,
-                'val_loss': val_loss,
-                'elapsed_time': elapsed_time,
-                'metrics': {
-                    'mse': current_loss,
-                    'rmse': current_loss ** 0.5,
-                    'mae': current_loss * 0.8,
-                    'r2': min(0.95, 0.5 + 0.4 * reduction_factor),
-                    'calculated_at': time.strftime('%H:%M:%S')
-                }
-            }
-            yield f"event: epoch_complete\ndata: {json.dumps(data)}\n\n"
-            
-            # Invia heartbeat tra le epoche
-            yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
-        
-        # Invia l'evento di completamento
-        completion_data = {
-            'total_time': elapsed_time,
-            'best_loss': min(current_loss, val_loss),
-            'final_loss': current_loss,
-            'metrics': {
-                'mse': current_loss,
-                'rmse': current_loss ** 0.5,
-                'mae': current_loss * 0.8,
-                'r2': 0.9,
-                'epochs_completed': max_epochs
-            }
-        }
-        yield f"event: training_complete\ndata: {json.dumps(completion_data)}\n\n"
-    
-    return Response(event_stream(), 
-                   content_type='text/event-stream',
-                   headers={
-                       'Cache-Control': 'no-cache',
-                       'Connection': 'keep-alive'
-                   })
-        
-# Fine dell'endpoint training_progress
-    
-    return Response(stream_with_context(event_stream()), 
-                   content_type='text/event-stream',
-                   headers={'Cache-Control': 'no-cache', 
-                            'X-Accel-Buffering': 'no'})
-
-@app.route('/stop-training', methods=['POST'])
-def stop_training():
-    """Interrompe una sessione di addestramento in corso"""
-    # Verifica che l'utente sia autenticato
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'error': 'Non autenticato'})
-    
-    # Ottieni l'ID dell'addestramento dalla richiesta
-    data = request.get_json()
-    training_id = data.get('training_id')
-    
-    if not training_id:
-        return jsonify({'success': False, 'error': 'ID dell\'addestramento non specificato'})
-    
-    # Interrompi l'addestramento
-    success = training_handler.stop_training(training_id)
-    
-    if success:
-        return jsonify({'success': True, 'message': 'Addestramento interrotto con successo'})
-    else:
-        return jsonify({'success': False, 'error': 'Impossibile interrompere l\'addestramento'})
-
 @app.route('/models', methods=['GET', 'POST'])
 def models():
     """ML Models page"""
@@ -2034,9 +1365,6 @@ def models():
     
     if dataset_id:
         selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
-        
-    # Modalità di addestramento diretta (senza visualizzatore separato)
-    direct_training = request.args.get('direct_training', type=bool, default=False)
     
     # Check for GPU availability but handle gracefully
     gpu_available = False
@@ -2253,22 +1581,18 @@ def models():
             X_test_tensor = torch.FloatTensor(X_test)
             y_test_tensor = torch.FloatTensor(y_test)
             
-            # Create datasets and dataloaders con ottimizzazioni aggiuntive
+            # Create datasets and dataloaders with optimal settings
             train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
             test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
             
-            # Disabilita multi-threading per evitare timeout nel server web
-            # Aumenta batch size per velocizzare l'addestramento ma riduci workers
-            num_workers = 0  # Nessun worker aggiuntivo per evitare timeout
+            # Use multiple workers for data loading if dataset is large enough
+            num_workers = 0
             pin_memory = False
             
-            # Aumenta il batch size in base alla dimensione del dataset 
-            if len(train_dataset) > 5000:
-                batch_size = max(batch_size, 128)
-            if len(train_dataset) > 10000:
-                batch_size = max(batch_size, 256)
-                
-            logger.debug(f"Using batch size: {batch_size}")
+            if len(train_dataset) > 1000:
+                num_workers = 2
+                pin_memory = True
+                logger.debug(f"Using optimized data loading with {num_workers} workers")
             
             train_loader = DataLoader(
                 train_dataset, 
@@ -2285,25 +1609,23 @@ def models():
                 pin_memory=pin_memory
             )
             
-            # Set device (CPU/GPU) con gestione semplificata
+            # Set device (CPU/GPU) with automatic detection of AMD GPU with ROCm
             device = torch.device("cpu")  # Default to CPU
             
-            try:
-                import os
-                # Tentiamo solo CUDA per massima compatibilità
+            if pytorch_available:
                 if torch.cuda.is_available():
                     device = torch.device("cuda:0")
-                    gpu_type = torch.cuda.get_device_name(0)
-                    logger.debug(f"Using NVIDIA GPU acceleration: {gpu_type}")
-                else:
-                    # Ottimizziamo per CPU
-                    num_cpu_threads = os.cpu_count() or 2
-                    torch.set_num_threads(num_cpu_threads)
-                    logger.debug(f"GPU not available. Using optimized CPU with {num_cpu_threads} threads")
-            except Exception as e:
-                logger.debug(f"Error detecting GPU: {str(e)}. Using CPU.")
-                # Assicuriamoci che device sia impostato a CPU in caso di errori
-                device = torch.device("cpu")
+                    logger.debug("Using NVIDIA CUDA GPU acceleration")
+                elif hasattr(torch, 'hip') and torch.hip.is_available():
+                    device = torch.device("cuda:0")  # ROCm uses the CUDA device namespace
+                    logger.debug("Using AMD ROCm GPU acceleration")
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    device = torch.device("mps")
+                    logger.debug("Using Apple Metal GPU acceleration")
+                elif gpu_available and ('AMD' in gpu_type or 'Radeon' in gpu_type):
+                    logger.debug("AMD GPU detected but ROCm not available. Using CPU with optimized settings.")
+                    # Enable as many optimizations as possible even on CPU
+                    torch.set_num_threads(4)  # Use multiple CPU threads
             
             logger.debug(f"Using device: {device}")
             
@@ -2342,119 +1664,57 @@ def models():
             # Training message
             logger.debug(f"Starting training of {model_name} model with {len(X_train)} samples on {device}")
             
-            # OPZIONE 1: Modalità demo per addestramento veloce nella UI
-            interactive_mode = request.form.get('interactive_mode') == 'on'
-            if interactive_mode:
-                # Creiamo una nuova sessione di addestramento
-                training_id, training_session = training_handler.create_training_session(
-                    model_type=model_type,
-                    model_name=model_name,
-                    dataset_id=dataset_id,
-                    dataset_name=selected_dataset.name,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    lookback=lookback,
-                    learning_rate=lr,
-                    device=str(device),
-                    demo_mode=not IS_DEPLOYED  # Modalità demo solo se non siamo in deploy
-                )
-                
-                # Avvieremo l'addestramento quando l'utente accede alla pagina
-                # ma salviamo i componenti necessari nella sessione
-                session['training_data'] = {
-                    training_id: {
-                        'model_type': model_type,
-                        'model_name': model_name,
-                        'dataset_id': dataset_id,
-                        'dataset_name': selected_dataset.name,
-                        'epochs': epochs,
-                        'batch_size': batch_size,
-                        'lookback': lookback,
-                        'learning_rate': lr,
-                        'device': str(device)
-                    }
-                }
-                
-                # Redirect alla pagina di visualizzazione interattiva
-                flash('Sessione di addestramento creata. Monitoraggio interattivo attivato.', 'success')
-                return redirect(url_for('training_visualizer', training_id=training_id))
-                
-            # OPZIONE 2: Modalità demo originale (addestramento limitato nella request HTTP)
-            else:
-                # Training loop con limitazioni per evitare timeout
-                # Se siamo in deploy, utilizziamo tutte le epoche richieste, altrimenti limitiamo
-                if IS_DEPLOYED:
-                    max_training_epochs = epochs
-                    logger.debug(f"Modalità completa: addestramento con {max_training_epochs} epoche")
-                else:
-                    max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
-                    logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
-                
-                for epoch in range(max_training_epochs):
-                    # Training
-                    model.train()
-                    train_loss = 0
+            # Training loop
+            for epoch in range(epochs):
+                # Training
+                model.train()
+                train_loss = 0
+                for inputs, targets in train_loader:
+                    inputs, targets = inputs.to(device), targets.to(device)
                     
-                    # Limitiamo il numero di batch per evitare timeout
-                    max_batches = min(len(train_loader), 10)
-                    batch_count = 0
+                    # Forward pass
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
                     
-                    for i, (inputs, targets) in enumerate(train_loader):
-                        if i >= max_batches:
-                            break  # Limitiamo il numero di batch
-                            
+                    # Backward and optimize
+                    loss.backward()
+                    optimizer.step()
+                    
+                    train_loss += loss.item()
+                
+                # Validation
+                model.eval()
+                val_loss = 0
+                with torch.no_grad():
+                    for inputs, targets in test_loader:
                         inputs, targets = inputs.to(device), targets.to(device)
-                        
-                        # Forward pass
-                        optimizer.zero_grad()
                         outputs = model(inputs)
                         loss = criterion(outputs, targets)
-                        
-                        # Backward and optimize
-                        loss.backward()
-                        optimizer.step()
-                        
-                        train_loss += loss.item()
-                        batch_count += 1
-                    
-                    # Validation - limitiamo anche questa
-                    model.eval()
-                    val_loss = 0
-                    max_val_batches = min(len(test_loader), 5)
-                    val_batch_count = 0
-                    
-                    with torch.no_grad():
-                        for i, (inputs, targets) in enumerate(test_loader):
-                            if i >= max_val_batches:
-                                break  # Limitiamo il numero di batch di validazione
-                                
-                            inputs, targets = inputs.to(device), targets.to(device)
-                            outputs = model(inputs)
-                            loss = criterion(outputs, targets)
-                            val_loss += loss.item()
-                            val_batch_count += 1
-                    
-                    # Calculate average losses
-                    train_loss = train_loss / batch_count if batch_count > 0 else 0
-                    val_loss = val_loss / val_batch_count if val_batch_count > 0 else 0
-                    
-                    # Store history
-                    history['loss'].append(train_loss)
-                    history['val_loss'].append(val_loss)
-                    
-                    # Salva sempre il modello nell'ultima epoca in modalità demo
-                    if epoch == max_training_epochs - 1:
-                        best_model_state = model.state_dict().copy()
-                    # Early stopping - semplificato per demo
-                    elif val_loss < best_val_loss:
-                        best_val_loss = val_loss
-                        best_model_state = model.state_dict().copy()
-                    
-                    # Print progress per ogni epoca in modalità demo
-                    logger.debug(f'Epoca [{epoch+1}/{max_training_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
-                    
-                # Notifica all'utente che è stata usata la modalità demo
-                flash('Addestramento completato in modalità demo (limitata). Per un monitoraggio interattivo, seleziona "Addestramento Interattivo".', 'warning')
+                        val_loss += loss.item()
+                
+                # Calculate average losses
+                train_loss /= len(train_loader)
+                val_loss /= len(test_loader)
+                
+                # Store history
+                history['loss'].append(train_loss)
+                history['val_loss'].append(val_loss)
+                
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    best_model_state = model.state_dict().copy()
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        logger.debug(f"Early stopping at epoch {epoch+1}")
+                        break
+                
+                # Print progress
+                if (epoch + 1) % 10 == 0:
+                    logger.debug(f'Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
             
             # Load best model
             if best_model_state:
@@ -2501,8 +1761,8 @@ def models():
             
             # Generate loss plot
             plt.figure(figsize=(10, 6))
-            plt.plot(history['loss'], label='Training Loss')
-            plt.plot(history['val_loss'], label='Validation Loss')
+            plt.plot(history.history['loss'], label='Training Loss')
+            plt.plot(history.history['val_loss'], label='Validation Loss')
             plt.title('Training and Validation Loss')
             plt.xlabel('Epochs')
             plt.ylabel('Loss (MSE)')
@@ -2518,26 +1778,12 @@ def models():
             loss_chart_data = base64.b64encode(loss_buffer.getvalue()).decode('utf-8')
             plt.close()
             
-            # Save model (PyTorch version)
+            # Save model
             import os
-            import torch
             model_dir = os.path.join(os.getcwd(), 'models/saved')
             os.makedirs(model_dir, exist_ok=True)
-            model_path = os.path.join(model_dir, f"{selected_dataset.symbol}_{model_type}_{lookback}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt")
-            
-            # Salvataggio specifico per PyTorch
-            try:
-                torch.save({
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scaler': scaler,
-                    'loss': best_val_loss
-                }, model_path)
-                logger.debug(f"Modello salvato con successo in: {model_path}")
-            except Exception as e:
-                logger.error(f"Errore nel salvataggio del modello: {str(e)}")
-                # Continuiamo anche se il salvataggio fallisce
-                flash(f"Avviso: Impossibile salvare il modello. {str(e)}", 'warning')
+            model_path = os.path.join(model_dir, f"{selected_dataset.symbol}_{model_type}_{lookback}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5")
+            model.save(model_path)
             
             # Prepare results
             results = {
@@ -2551,7 +1797,7 @@ def models():
                 'rmse': rmse,
                 'mae': mae,
                 'r2': r2,
-                'trained_epochs': len(history['loss']),
+                'trained_epochs': len(history.history['loss']),
                 'model_path': model_path,
                 'gpu_used': gpu_available
             }
@@ -2592,1252 +1838,6 @@ def page_not_found(e):
 def server_error(e):
     logger.error(f"Server error: {str(e)}")
     return render_template('500.html'), 500
-
-
-@app.route('/sentiment_analysis')
-@app.route('/sentiment_analysis/<int:dataset_id>')
-def sentiment_analysis(dataset_id=None):
-    """Pagina per l'analisi del sentiment"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Ottieni tutti i dataset dell'utente per il menu dropdown
-    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
-    
-    # Se non è specificato un dataset_id e l'utente ha dataset, usa il primo
-    if dataset_id is None and user_datasets:
-        dataset_id = user_datasets[0].id
-    
-    selected_dataset = None
-    sentiment_chart = None
-    sentiment_summary = None
-    sentiment_data_id = None
-    recent_news = []
-    date_range = {"start": None, "end": None}
-    news_count = 0
-    
-    if dataset_id:
-        # Ottieni il dataset selezionato
-        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
-        
-        # Controlla se esiste già un'analisi del sentiment per questo dataset
-        sentiment_data = SentimentData.query.filter_by(dataset_id=dataset_id, user_id=user.id).first()
-        
-        if sentiment_data:
-            # Usa i dati esistenti
-            sentiment_data_dict = sentiment_data.data
-            sentiment_data_id = sentiment_data.id
-            
-            # Estrai le informazioni necessarie
-            sentiment_chart = sentiment_data_dict.get('chart', None)
-            sentiment_summary = sentiment_data_dict.get('summary', {})
-            recent_news = sentiment_data_dict.get('recent_news', [])
-            date_range = sentiment_data_dict.get('date_range', {"start": None, "end": None})
-            news_count = sentiment_data_dict.get('news_count', 0)
-        else:
-            # Crea una nuova analisi del sentiment
-            try:
-                # Carica i dati del dataset
-                df = load_dataset(selected_dataset)
-                
-                # Estrai le date di inizio e fine
-                start_date = df.index.min().to_pydatetime() if not df.empty else datetime.now() - timedelta(days=30)
-                end_date = df.index.max().to_pydatetime() if not df.empty else datetime.now()
-                date_range = {"start": start_date.strftime('%d/%m/%Y'), "end": end_date.strftime('%d/%m/%Y')}
-                
-                # Genera dati di esempio per le notizie (simulazione)
-                # In un'implementazione reale, questi dati dovrebbero provenire da un'API o da un crawler
-                news_data = generate_sample_news_data(
-                    symbol=selected_dataset.symbol,
-                    start_date=start_date,
-                    end_date=end_date,
-                    count=20
-                )
-                news_count = len(news_data)
-                
-                # Analizza il sentiment
-                analyzer = SentimentAnalyzer(use_vader=True, use_textblob=True)
-                
-                # Analizza il sentiment dei titoli delle notizie
-                sentiment_results = analyzer.analyze_dataframe(news_data, 'title', 'date')
-                
-                # Genera il grafico del sentiment
-                sentiment_chart = analyzer.generate_sentiment_chart(
-                    sentiment_results, 
-                    f"Sentiment Analysis - {selected_dataset.symbol}"
-                )
-                
-                # Genera il riepilogo del sentiment
-                sentiment_summary = analyzer.summarize_sentiment(sentiment_results)
-                
-                # Prepara le notizie recenti per la visualizzazione
-                recent_news = []
-                for _, row in news_data.sort_values('date', ascending=False).head(10).iterrows():
-                    sentiment_score = float(row['sentiment'])
-                    _, color = analyzer.get_sentiment_colors(sentiment_score)
-                    label = analyzer.get_sentiment_label(sentiment_score)
-                    
-                    recent_news.append({
-                        "date": row['date'].strftime('%d/%m/%Y'),
-                        "title": row['title'],
-                        "sentiment_score": sentiment_score,
-                        "sentiment_label": label,
-                        "sentiment_color": color
-                    })
-                
-                # Salva i dati del sentiment nel database
-                new_sentiment_data = SentimentData(
-                    dataset_id=dataset_id,
-                    user_id=user.id,
-                    data={
-                        'chart': sentiment_chart,
-                        'summary': sentiment_summary,
-                        'recent_news': recent_news,
-                        'date_range': date_range,
-                        'news_count': news_count
-                    }
-                )
-                db.session.add(new_sentiment_data)
-                db.session.commit()
-                
-                sentiment_data_id = new_sentiment_data.id
-                
-                logger.info(f"Nuova analisi del sentiment creata per il dataset {dataset_id}")
-                
-            except Exception as e:
-                logger.error(f"Errore durante l'analisi del sentiment: {str(e)}")
-                flash(f'Errore durante l\'analisi del sentiment: {str(e)}', 'danger')
-    
-    return render_template('sentiment_analysis.html',
-                          user_datasets=user_datasets,
-                          selected_dataset=selected_dataset,
-                          sentiment_chart=sentiment_chart,
-                          sentiment_summary=sentiment_summary,
-                          recent_news=recent_news,
-                          sentiment_data_id=sentiment_data_id,
-                          date_range=date_range,
-                          news_count=news_count)
-
-
-@app.route('/update_sentiment/<int:dataset_id>', methods=['POST'])
-def update_sentiment(dataset_id):
-    """Aggiorna l'analisi del sentiment per un dataset"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({"success": False, "message": "Utente non autenticato."}), 401
-    
-    # Ottieni il dataset
-    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
-    if not dataset:
-        return jsonify({"success": False, "message": "Dataset non trovato."}), 404
-    
-    try:
-        # Carica i dati del dataset
-        df = load_dataset(dataset)
-        
-        # Estrai le date di inizio e fine
-        start_date = df.index.min().to_pydatetime() if not df.empty else datetime.now() - timedelta(days=30)
-        end_date = df.index.max().to_pydatetime() if not df.empty else datetime.now()
-        date_range = {"start": start_date.strftime('%d/%m/%Y'), "end": end_date.strftime('%d/%m/%Y')}
-        
-        # Genera nuovi dati di esempio per le notizie
-        news_data = generate_sample_news_data(
-            symbol=dataset.symbol,
-            start_date=start_date,
-            end_date=end_date,
-            count=25  # Incrementiamo il numero di notizie per avere più dati
-        )
-        news_count = len(news_data)
-        
-        # Analizza il sentiment
-        analyzer = SentimentAnalyzer(use_vader=True, use_textblob=True)
-        
-        # Analizza il sentiment dei titoli delle notizie
-        sentiment_results = analyzer.analyze_dataframe(news_data, 'title', 'date')
-        
-        # Genera il grafico del sentiment
-        sentiment_chart = analyzer.generate_sentiment_chart(
-            sentiment_results, 
-            f"Sentiment Analysis - {dataset.symbol} (Aggiornato)"
-        )
-        
-        # Genera il riepilogo del sentiment
-        sentiment_summary = analyzer.summarize_sentiment(sentiment_results)
-        
-        # Prepara le notizie recenti per la visualizzazione
-        recent_news = []
-        for _, row in news_data.sort_values('date', ascending=False).head(10).iterrows():
-            sentiment_score = float(row['sentiment'])
-            _, color = analyzer.get_sentiment_colors(sentiment_score)
-            label = analyzer.get_sentiment_label(sentiment_score)
-            
-            recent_news.append({
-                "date": row['date'].strftime('%d/%m/%Y'),
-                "title": row['title'],
-                "sentiment_score": sentiment_score,
-                "sentiment_label": label,
-                "sentiment_color": color
-            })
-        
-        # Aggiorna o crea i dati del sentiment nel database
-        sentiment_data = SentimentData.query.filter_by(dataset_id=dataset_id, user_id=user.id).first()
-        
-        if sentiment_data:
-            # Aggiorna i dati esistenti
-            sentiment_data.data = {
-                'chart': sentiment_chart,
-                'summary': sentiment_summary,
-                'recent_news': recent_news,
-                'date_range': date_range,
-                'news_count': news_count
-            }
-            sentiment_data.updated_at = datetime.utcnow()
-        else:
-            # Crea nuovi dati
-            sentiment_data = SentimentData(
-                dataset_id=dataset_id,
-                user_id=user.id,
-                data={
-                    'chart': sentiment_chart,
-                    'summary': sentiment_summary,
-                    'recent_news': recent_news,
-                    'date_range': date_range,
-                    'news_count': news_count
-                }
-            )
-            db.session.add(sentiment_data)
-        
-        db.session.commit()
-        
-        return jsonify({
-            "success": True, 
-            "message": "Analisi del sentiment aggiornata con successo.",
-            "sentiment_data_id": sentiment_data.id
-        })
-    
-    except Exception as e:
-        logger.error(f"Errore durante l'aggiornamento dell'analisi del sentiment: {str(e)}")
-        return jsonify({"success": False, "message": f"Errore: {str(e)}"}), 500
-
-
-@app.route('/custom_strategy')
-@app.route('/custom_strategy/<int:dataset_id>')
-def custom_strategy(dataset_id=None):
-    """Pagina per le strategie di trading personalizzate"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Ottieni tutti i dataset dell'utente per il menu dropdown
-    user_datasets = Dataset.query.filter_by(user_id=user.id).order_by(Dataset.created_at.desc()).all()
-    
-    # Se non è specificato un dataset_id e l'utente ha dataset, usa il primo
-    if dataset_id is None and user_datasets:
-        dataset_id = user_datasets[0].id
-    
-    selected_dataset = None
-    selected_strategy = None
-    strategy_chart = None
-    strategy_stats = None
-    user_strategies = []
-    
-    # Controlla se viene richiesta la visualizzazione di una strategia
-    strategy_id = request.args.get('strategy_id', None, type=int)
-    
-    # Ottieni i tipi di strategia disponibili
-    available_strategies = [
-        {
-            "type": "MovingAverageCrossStrategy",
-            "name": "Incrocio Medie Mobili",
-            "description": "Strategia basata sull'incrocio di medie mobili",
-            "parameters": {
-                "short_window": {
-                    "name": "Periodo Media Breve",
-                    "description": "Periodo per la media mobile breve",
-                    "type": "int",
-                    "default": 20,
-                    "min": 5,
-                    "max": 50
-                },
-                "long_window": {
-                    "name": "Periodo Media Lunga",
-                    "description": "Periodo per la media mobile lunga",
-                    "type": "int",
-                    "default": 50,
-                    "min": 20,
-                    "max": 200
-                },
-                "ma_type": {
-                    "name": "Tipo Media Mobile",
-                    "description": "Tipo di media mobile da utilizzare",
-                    "type": "select",
-                    "options": ["SMA", "EMA", "WMA"],
-                    "default": "SMA"
-                }
-            }
-        },
-        {
-            "type": "BollingerBandsStrategy",
-            "name": "Bande di Bollinger",
-            "description": "Strategia basata sulle bande di Bollinger",
-            "parameters": {
-                "window": {
-                    "name": "Periodo",
-                    "description": "Periodo per il calcolo delle bande",
-                    "type": "int",
-                    "default": 20,
-                    "min": 10,
-                    "max": 50
-                },
-                "num_std": {
-                    "name": "Deviazioni Standard",
-                    "description": "Numero di deviazioni standard per le bande",
-                    "type": "float",
-                    "default": 2.0,
-                    "min": 1.0,
-                    "max": 3.0,
-                    "step": 0.1
-                }
-            }
-        },
-        {
-            "type": "RSIStrategy",
-            "name": "RSI (Relative Strength Index)",
-            "description": "Strategia basata sull'indicatore RSI",
-            "parameters": {
-                "window": {
-                    "name": "Periodo RSI",
-                    "description": "Periodo per il calcolo dell'RSI",
-                    "type": "int",
-                    "default": 14,
-                    "min": 7,
-                    "max": 30
-                },
-                "overbought": {
-                    "name": "Soglia Ipercomprato",
-                    "description": "Livello RSI considerato ipercomprato",
-                    "type": "int",
-                    "default": 70,
-                    "min": 60,
-                    "max": 90
-                },
-                "oversold": {
-                    "name": "Soglia Ipervenduto",
-                    "description": "Livello RSI considerato ipervenduto",
-                    "type": "int",
-                    "default": 30,
-                    "min": 10,
-                    "max": 40
-                }
-            }
-        },
-        {
-            "type": "SentimentBasedStrategy",
-            "name": "Strategia Basata sul Sentiment",
-            "description": "Strategia che utilizza l'analisi del sentiment per generare segnali di trading",
-            "parameters": {
-                "positive_threshold": {
-                    "name": "Soglia Positiva",
-                    "description": "Soglia del sentiment per segnali di acquisto",
-                    "type": "float",
-                    "default": 0.3,
-                    "min": 0.1,
-                    "max": 0.7,
-                    "step": 0.05
-                },
-                "negative_threshold": {
-                    "name": "Soglia Negativa",
-                    "description": "Soglia del sentiment per segnali di vendita",
-                    "type": "float",
-                    "default": -0.3,
-                    "min": -0.7,
-                    "max": -0.1,
-                    "step": 0.05
-                },
-                "trend_weight": {
-                    "name": "Peso del Trend",
-                    "description": "Peso da assegnare al trend di prezzo (vs sentiment)",
-                    "type": "float",
-                    "default": 0.5,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.1
-                }
-            }
-        }
-    ]
-    
-    if dataset_id:
-        # Ottieni il dataset selezionato
-        selected_dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first_or_404()
-        
-        # Ottieni le strategie dell'utente
-        user_strategies = CustomStrategyModel.query.filter_by(user_id=user.id).all()
-        
-        # Se viene richiesta la visualizzazione di una specifica strategia
-        if strategy_id:
-            selected_strategy = CustomStrategyModel.query.filter_by(id=strategy_id, user_id=user.id).first()
-            
-            if selected_strategy:
-                try:
-                    # Carica i dati del dataset
-                    df = load_dataset(selected_dataset)
-                    
-                    # Crea un'istanza della strategia
-                    strategy_type = selected_strategy.strategy_type
-                    strategy = CustomStrategyBuilder.create_strategy(
-                        strategy_type=strategy_type,
-                        name=selected_strategy.name,
-                        description=selected_strategy.description,
-                        parameters=selected_strategy.parameters
-                    )
-                    
-                    # Genera i segnali
-                    signals = strategy.generate_signals(df)
-                    
-                    # Crea il grafico della strategia
-                    # (Questa parte andrebbe implementata in modo più completo in un'applicazione reale)
-                    plt.figure(figsize=(12, 6))
-                    plt.plot(df.index, df['close'], label='Prezzo')
-                    
-                    # Aggiungi i segnali di acquisto e vendita
-                    buy_signals = df.index[signals == TradingSignal.BUY]
-                    sell_signals = df.index[signals == TradingSignal.SELL]
-                    
-                    plt.scatter(buy_signals, df.loc[buy_signals, 'close'], marker='^', color='green', s=100, label='Acquisto')
-                    plt.scatter(sell_signals, df.loc[sell_signals, 'close'], marker='v', color='red', s=100, label='Vendita')
-                    
-                    plt.title(f"Segnali di Trading - {selected_strategy.name} su {selected_dataset.symbol}")
-                    plt.xlabel('Data')
-                    plt.ylabel('Prezzo')
-                    plt.legend()
-                    plt.grid(True, alpha=0.3)
-                    
-                    # Converti il grafico in base64
-                    buffer = io.BytesIO()
-                    plt.savefig(buffer, format='png', bbox_inches='tight')
-                    buffer.seek(0)
-                    strategy_chart = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                    plt.close()
-                    
-                    # Calcola le statistiche
-                    buy_signals_count = (signals == TradingSignal.BUY).sum()
-                    sell_signals_count = (signals == TradingSignal.SELL).sum()
-                    hold_signals_count = (signals == TradingSignal.HOLD).sum()
-                    
-                    last_signal = "Nessuno"
-                    if len(signals) > 0:
-                        last_signal_value = signals.iloc[-1]
-                        if last_signal_value == TradingSignal.BUY:
-                            last_signal = "Acquisto"
-                        elif last_signal_value == TradingSignal.SELL:
-                            last_signal = "Vendita"
-                        elif last_signal_value == TradingSignal.HOLD:
-                            last_signal = "Attesa"
-                    
-                    strategy_stats = {
-                        "buy_signals": buy_signals_count,
-                        "sell_signals": sell_signals_count,
-                        "hold_signals": hold_signals_count,
-                        "total_signals": len(signals),
-                        "last_signal": last_signal
-                    }
-                    
-                except Exception as e:
-                    logger.error(f"Errore durante la generazione del grafico della strategia: {str(e)}")
-                    flash(f'Errore durante la generazione del grafico della strategia: {str(e)}', 'danger')
-    
-    # Prepara il JSON per le strategie disponibili
-    available_strategies_json = json.dumps(available_strategies)
-    
-    return render_template('custom_strategy.html',
-                          user_datasets=user_datasets,
-                          selected_dataset=selected_dataset,
-                          available_strategies=available_strategies,
-                          available_strategies_json=available_strategies_json,
-                          user_strategies=user_strategies,
-                          selected_strategy=selected_strategy,
-                          strategy_chart=strategy_chart,
-                          strategy_stats=strategy_stats)
-
-
-@app.route('/create_strategy', methods=['POST'])
-def create_strategy():
-    """Crea una nuova strategia personalizzata"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    try:
-        dataset_id = request.form.get('dataset_id', None, type=int)
-        name = request.form.get('name', '')
-        description = request.form.get('description', '')
-        strategy_type = request.form.get('strategy_type', '')
-        
-        # Controlla i dati di input
-        if not name or not strategy_type:
-            flash('Nome e tipo di strategia sono obbligatori.', 'danger')
-            return redirect(url_for('custom_strategy', dataset_id=dataset_id))
-        
-        # Ottieni i parametri dal form
-        parameters = {}
-        for key, value in request.form.items():
-            if key.startswith('parameters[') and key.endswith(']'):
-                param_name = key[11:-1]  # Estrai il nome del parametro
-                
-                # Converti il valore nel tipo appropriato
-                try:
-                    param_value = float(value)
-                    # Se è un intero, converti in int
-                    if param_value.is_integer():
-                        param_value = int(param_value)
-                except ValueError:
-                    # Se non è un numero, lascialo come stringa
-                    param_value = value
-                
-                parameters[param_name] = param_value
-        
-        # Crea l'istanza della strategia
-        new_strategy = CustomStrategyModel(
-            name=name,
-            description=description,
-            strategy_type=strategy_type,
-            parameters=parameters,
-            user_id=user.id,
-            dataset_id=dataset_id
-        )
-        
-        # Se un dataset è specificato, testa la strategia per calcolare le metriche
-        if dataset_id:
-            dataset = Dataset.query.get(dataset_id)
-            if dataset:
-                df = load_dataset(dataset)
-                
-                # Crea un'istanza della strategia per il test
-                strategy = CustomStrategyBuilder.create_strategy(
-                    strategy_type=strategy_type,
-                    name=name,
-                    description=description,
-                    parameters=parameters
-                )
-                
-                # Genera i segnali
-                signals = strategy.generate_signals(df)
-                
-                # Calcola le metriche di performance
-                # Nota: qui utilizziamo una versione semplificata, in un'applicazione reale
-                # si dovrebbe utilizzare un sistema di backtesting più completo
-                price_changes = df['close'].pct_change().shift(-1)
-                
-                # Accuratezza
-                correct_signals = ((signals == TradingSignal.BUY) & (price_changes > 0)) | \
-                                 ((signals == TradingSignal.SELL) & (price_changes < 0)) | \
-                                 ((signals == TradingSignal.HOLD) & (abs(price_changes) < 0.005))
-                
-                accuracy = correct_signals.mean() if len(correct_signals) > 0 else 0.0
-                
-                # Simula trading
-                position = 0  # 0 = no position, 1 = long, -1 = short
-                trades = []
-                entry_price = 0
-                
-                for i, signal in enumerate(signals):
-                    if i >= len(df) - 1:
-                        break
-                        
-                    current_price = df['close'].iloc[i]
-                    next_price = df['close'].iloc[i+1]
-                    
-                    if signal == TradingSignal.BUY and position <= 0:
-                        # Chiudi short se presente
-                        if position == -1:
-                            trades.append(entry_price - current_price)
-                        
-                        # Apri long
-                        position = 1
-                        entry_price = current_price
-                        
-                    elif signal == TradingSignal.SELL and position >= 0:
-                        # Chiudi long se presente
-                        if position == 1:
-                            trades.append(current_price - entry_price)
-                        
-                        # Apri short
-                        position = -1
-                        entry_price = current_price
-                
-                # Calcola win rate e profit factor
-                if trades:
-                    winning_trades = [t for t in trades if t > 0]
-                    win_rate = len(winning_trades) / len(trades) if trades else 0
-                    
-                    # Profit factor
-                    total_profit = sum(winning_trades) if winning_trades else 0
-                    total_loss = abs(sum([t for t in trades if t < 0])) if any(t < 0 for t in trades) else 1
-                    profit_factor = total_profit / total_loss if total_loss > 0 else 0
-                    
-                    # Sharpe ratio (semplificato)
-                    returns = [t / entry_price for t in trades]
-                    mean_return = sum(returns) / len(returns) if returns else 0
-                    std_return = np.std(returns) if len(returns) > 1 else 1
-                    sharpe_ratio = mean_return / std_return if std_return > 0 else 0
-                else:
-                    win_rate = 0
-                    profit_factor = 0
-                    sharpe_ratio = 0
-                
-                # Aggiorna le metriche della strategia
-                new_strategy.accuracy = float(accuracy)
-                new_strategy.win_rate = float(win_rate)
-                new_strategy.profit_factor = float(profit_factor)
-                new_strategy.sharpe_ratio = float(sharpe_ratio)
-        
-        # Salva la strategia nel database
-        db.session.add(new_strategy)
-        db.session.commit()
-        
-        flash(f'Strategia "{name}" creata con successo.', 'success')
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Errore durante la creazione della strategia: {str(e)}")
-        flash(f'Errore durante la creazione della strategia: {str(e)}', 'danger')
-    
-    return redirect(url_for('custom_strategy', dataset_id=dataset_id))
-
-
-@app.route('/optimize_strategy', methods=['POST'])
-def optimize_strategy():
-    """Ottimizza una strategia esistente con tecniche di IA"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({"success": False, "message": "Utente non autenticato."}), 401
-    
-    # Ottieni i dati dalla richiesta
-    data = request.json
-    strategy_id = data.get('strategy_id')
-    dataset_id = data.get('dataset_id')
-    
-    if not strategy_id or not dataset_id:
-        return jsonify({"success": False, "message": "Parametri mancanti."}), 400
-    
-    # Ottieni la strategia e il dataset
-    strategy = CustomStrategyModel.query.filter_by(id=strategy_id, user_id=user.id).first()
-    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user.id).first()
-    
-    if not strategy or not dataset:
-        return jsonify({"success": False, "message": "Strategia o dataset non trovato."}), 404
-    
-    try:
-        # Carica i dati del dataset
-        df = load_dataset(dataset)
-        
-        # Crea un'istanza della strategia originale
-        original_strategy = CustomStrategyBuilder.create_strategy(
-            strategy_type=strategy.strategy_type,
-            name=strategy.name,
-            description=strategy.description,
-            parameters=strategy.parameters
-        )
-        
-        # Crea l'ottimizzatore di strategie
-        optimizer = StrategyOptimizer(
-            data=df,
-            strategy=original_strategy,
-            train_test_split=0.7,
-            population_size=20,
-            generations=10,
-            mutation_rate=0.2,
-            crossover_rate=0.7
-        )
-        
-        # Ottimizza la strategia
-        optimized_strategy, improvements, is_improved = optimizer.optimize()
-        
-        # Se la strategia è migliorata, aggiorna il database
-        if is_improved:
-            # Salva i parametri ottimizzati
-            strategy.parameters = optimized_strategy.parameters
-            strategy.updated_at = datetime.utcnow()
-            
-            # Aggiorna le metriche di performance
-            original_performance = optimizer.original_performance
-            best_performance = optimizer._evaluate_strategy(optimized_strategy, optimizer.test_data)
-            
-            strategy.accuracy = float(best_performance.get('accuracy', 0.0))
-            strategy.profit_factor = float(best_performance.get('profit_factor', 0.0))
-            strategy.sharpe_ratio = float(best_performance.get('sharpe_ratio', 0.0))
-            strategy.win_rate = float(best_performance.get('win_rate', 0.0))
-            
-            db.session.commit()
-            
-            # Prepara il messaggio di miglioramento
-            improvement_msg = "<ul>"
-            for metric, value in improvements.items():
-                formatted_value = round(value, 2)
-                improvement_msg += f"<li><strong>{metric.capitalize()}:</strong> {'+' if formatted_value > 0 else ''}{formatted_value}%</li>"
-            improvement_msg += "</ul>"
-            
-            return jsonify({
-                "success": True,
-                "message": f"La strategia è stata ottimizzata con successo! Miglioramenti:{improvement_msg}"
-            })
-        else:
-            return jsonify({
-                "success": True,
-                "message": "Nessun miglioramento significativo trovato. La strategia originale è già ottimale."
-            })
-        
-    except Exception as e:
-        logger.error(f"Errore durante l'ottimizzazione della strategia: {str(e)}")
-        return jsonify({"success": False, "message": f"Errore durante l'ottimizzazione: {str(e)}"}), 500
-
-@app.route('/update_notification_settings', methods=['POST'])
-def update_notification_settings():
-    """Aggiorna le impostazioni di notifica dell'utente"""
-    # Controlla se l'utente è autenticato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Ottieni i dati dal form
-    timeframe = request.form.get('notification_timeframe', '1h')
-    enabled = 'notification_enabled' in request.form
-    
-    # Ottieni le impostazioni esistenti
-    notification_settings = NotificationSettings.query.filter_by(user_id=user.id).first()
-    
-    # Se non esistono, crea nuove impostazioni
-    if not notification_settings:
-        notification_settings = NotificationSettings(
-            user_id=user.id,
-            timeframe=timeframe,
-            enabled=enabled
-        )
-        db.session.add(notification_settings)
-    else:
-        # Aggiorna le impostazioni esistenti
-        notification_settings.timeframe = timeframe
-        notification_settings.enabled = enabled
-    
-    # Salva le modifiche
-    db.session.commit()
-    
-    # Invia un messaggio di conferma via Telegram se abilitato
-    if enabled and user.telegram_bot_token and user.telegram_chat_id:
-        try:
-            # Crea un messaggio di test con dati di esempio
-            message = {
-                'total_balance': 1000.0,
-                'currencies': {'BTC': 0.01, 'ETH': 0.1, 'USDT': 500}
-            }
-            send_balance_update(user, message)
-            flash('Notifiche Telegram abilitate con successo! È stato inviato un messaggio di prova.', 'success')
-        except Exception as e:
-            flash(f'Notifiche abilitate, ma non è stato possibile inviare un messaggio di prova: {str(e)}', 'warning')
-    else:
-        flash('Impostazioni di notifica aggiornate con successo!', 'success')
-    
-    return redirect(url_for('index'))
-
-@app.route('/send_price_notification/<string:symbol>/<string:alert_type>')
-def send_price_notification(symbol, alert_type):
-    """Invia una notifica di prezzo manuale (solo per test)"""
-    # Controlla se l'utente è autenticato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa funzione.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Controlla se l'utente ha configurato Telegram
-    if not user.telegram_bot_token or not user.telegram_chat_id:
-        flash('Devi configurare le impostazioni Telegram nel tuo profilo prima di poter ricevere notifiche.', 'warning')
-        return redirect(url_for('profile'))
-    
-    # Simula un prezzo e una variazione
-    price = 50000.0 if symbol == 'BTC' else 3000.0 if symbol == 'ETH' else 1.0
-    change_percent = 5.0 if alert_type == 'new_high' else -5.0 if alert_type == 'new_low' else 2.0
-    
-    # Invia la notifica
-    try:
-        send_price_alert(user, symbol, price, alert_type, change_percent)
-        flash(f'Notifica {alert_type} per {symbol} inviata con successo!', 'success')
-    except Exception as e:
-        flash(f'Errore nell\'invio della notifica: {str(e)}', 'danger')
-    
-    return redirect(url_for('index'))
-
-@app.route('/api/save-profile', methods=['POST'])
-def save_api_profile():
-    """Salva un profilo di API keys (API JSON)"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Utente non autenticato'})
-    
-    try:
-        data = request.json
-        if not data or 'name' not in data or 'data' not in data:
-            return jsonify({'success': False, 'message': 'Dati richiesti mancanti'})
-        
-        profile_name = data['name'].strip()
-        profile_data = data['data']
-        
-        if not profile_name:
-            return jsonify({'success': False, 'message': 'Nome profilo non valido'})
-        
-        # Verifica se esiste già un profilo con questo nome
-        existing_profile = ApiProfile.query.filter_by(
-            user_id=user.id,
-            name=profile_name
-        ).first()
-        
-        if existing_profile:
-            # Aggiorna il profilo esistente
-            existing_profile.data = profile_data
-            existing_profile.created_at = datetime.utcnow()
-            db.session.commit()
-            return jsonify({'success': True, 'message': 'Profilo aggiornato con successo'})
-        else:
-            # Crea un nuovo profilo
-            new_profile = ApiProfile(
-                name=profile_name,
-                data=profile_data,
-                user_id=user.id
-            )
-            db.session.add(new_profile)
-            db.session.commit()
-            return jsonify({'success': True, 'message': 'Profilo salvato con successo'})
-    
-    except Exception as e:
-        logger.error(f"Errore nel salvataggio del profilo API: {str(e)}")
-        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
-
-@app.route('/api/save-profile-form', methods=['POST'])
-def save_api_profile_form():
-    """Salva un profilo API tramite form normale (non AJAX)"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Utente non autenticato', 'danger')
-        return redirect(url_for('profile'))
-    
-    try:
-        profile_name = request.form.get('profile_name', '').strip()
-        profile_data_str = request.form.get('profile_data', '{}')
-        
-        if not profile_name:
-            flash('Nome profilo non valido', 'danger')
-            return redirect(url_for('profile'))
-        
-        try:
-            profile_data = json.loads(profile_data_str)
-        except:
-            flash('Errore nella formattazione dei dati del profilo', 'danger')
-            return redirect(url_for('profile'))
-        
-        # Verifica se esiste già un profilo con questo nome
-        existing_profile = ApiProfile.query.filter_by(
-            user_id=user.id, 
-            name=profile_name
-        ).first()
-        
-        if existing_profile:
-            # Aggiorna il profilo esistente
-            existing_profile.data = profile_data
-            existing_profile.created_at = datetime.utcnow()
-            db.session.commit()
-            flash(f'Profilo "{profile_name}" aggiornato con successo', 'success')
-        else:
-            # Crea un nuovo profilo
-            new_profile = ApiProfile(
-                name=profile_name,
-                data=profile_data,
-                user_id=user.id
-            )
-            db.session.add(new_profile)
-            db.session.commit()
-            flash(f'Profilo "{profile_name}" salvato con successo', 'success')
-        
-        return redirect(url_for('profile'))
-    
-    except Exception as e:
-        logger.error(f"Errore nel salvataggio del profilo API: {str(e)}")
-        flash(f'Errore nel salvataggio del profilo: {str(e)}', 'danger')
-        return redirect(url_for('profile'))
-
-
-@app.route('/api/get-profiles', methods=['GET'])
-def get_api_profiles():
-    """Recupera tutti i profili API dell'utente"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Utente non autenticato'})
-    
-    try:
-        profiles = ApiProfile.query.filter_by(user_id=user.id).order_by(ApiProfile.created_at.desc()).all()
-        profiles_list = [{'id': p.id, 'name': p.name, 'created_at': p.created_at.strftime('%d/%m/%Y %H:%M')} 
-                         for p in profiles]
-        
-        return jsonify({
-            'success': True, 
-            'profiles': profiles_list
-        })
-    
-    except Exception as e:
-        logger.error(f"Errore nel recupero dei profili API: {str(e)}")
-        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
-
-
-@app.route('/api/get-profile/<int:profile_id>', methods=['GET'])
-def get_api_profile(profile_id):
-    """Recupera un profilo API specifico"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Utente non autenticato'})
-    
-    try:
-        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
-        
-        if not profile:
-            return jsonify({'success': False, 'message': 'Profilo non trovato'})
-        
-        return jsonify({
-            'success': True,
-            'profile': {
-                'id': profile.id,
-                'name': profile.name,
-                'data': profile.data,
-                'created_at': profile.created_at.strftime('%d/%m/%Y %H:%M')
-            }
-        })
-    
-    except Exception as e:
-        logger.error(f"Errore nel recupero del profilo API: {str(e)}")
-        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
-
-
-@app.route('/load-api-profile', methods=['GET'])
-def load_api_profiles():
-    """Pagina di selezione profili API per caricamento"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'danger')
-        return redirect(url_for('login'))
-    
-    # Recupera tutti i profili dell'utente
-    profiles = ApiProfile.query.filter_by(user_id=user.id).order_by(ApiProfile.created_at.desc()).all()
-    
-    return render_template('load_profiles.html', 
-                          profiles=profiles, 
-                          current_user=user)
-
-
-@app.route('/load-profile/<int:profile_id>', methods=['GET'])
-def load_profile(profile_id):
-    """Carica un profilo API e reindirizza alla pagina del profilo"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'danger')
-        return redirect(url_for('login'))
-    
-    try:
-        # Verifica che il profilo esista e appartenga all'utente
-        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
-        
-        if not profile:
-            flash('Profilo non trovato o non hai i permessi per accedervi.', 'danger')
-            return redirect(url_for('profile'))
-        
-        # Estrai i dati del profilo
-        profile_data = profile.data
-        
-        # Aggiorna il profilo utente con questi dati
-        if 'binance_api_key' in profile_data:
-            user.binance_api_key = profile_data.get('binance_api_key')
-        if 'binance_api_secret' in profile_data:
-            user.binance_api_secret = profile_data.get('binance_api_secret')
-        if 'kraken_api_key' in profile_data:
-            user.kraken_api_key = profile_data.get('kraken_api_key')
-        if 'kraken_api_secret' in profile_data:
-            user.kraken_api_secret = profile_data.get('kraken_api_secret')
-        if 'telegram_bot_token' in profile_data:
-            user.telegram_bot_token = profile_data.get('telegram_bot_token')
-        if 'telegram_chat_id' in profile_data:
-            user.telegram_chat_id = profile_data.get('telegram_chat_id')
-        
-        # Salva le modifiche
-        db.session.commit()
-        
-        flash(f'Profilo "{profile.name}" caricato con successo!', 'success')
-        return redirect(url_for('profile'))
-    
-    except Exception as e:
-        logger.error(f"Errore nel caricamento del profilo: {str(e)}")
-        flash(f'Errore nel caricamento del profilo: {str(e)}', 'danger')
-        return redirect(url_for('profile'))
-
-
-@app.route('/api/delete-profile/<int:profile_id>', methods=['DELETE'])
-def delete_api_profile(profile_id):
-    """Elimina un profilo API specifico"""
-    # Verifica che l'utente sia loggato
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Utente non autenticato'})
-    
-    try:
-        profile = ApiProfile.query.filter_by(id=profile_id, user_id=user.id).first()
-        
-        if not profile:
-            return jsonify({'success': False, 'message': 'Profilo non trovato'})
-        
-        db.session.delete(profile)
-        db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Profilo eliminato con successo'})
-    
-    except Exception as e:
-        logger.error(f"Errore nell'eliminazione del profilo API: {str(e)}")
-        return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
-
-
-# Rotte per i segnali di trading basati su AI
-@app.route('/trading-signals', methods=['GET'])
-def trading_signals():
-    """Pagina per la gestione dei segnali di trading basati su AI"""
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login', next=request.url))
-    
-    # Verifica se l'utente ha configurato Telegram
-    telegram_configured = bool(user.telegram_bot_token and user.telegram_chat_id)
-    
-    # Ottieni tutti i modelli ML dell'utente
-    models = MLModel.query.filter_by(user_id=user.id).all()
-    
-    # Ottieni tutti i dataset dell'utente
-    datasets = Dataset.query.filter_by(user_id=user.id).all()
-    
-    # Ottieni le configurazioni di segnali attive
-    signal_configs = SignalConfig.query.filter_by(user_id=user.id).all()
-    
-    # Prepara i dati per il template
-    active_configs = []
-    for config in signal_configs:
-        try:
-            model_ids = json.loads(config.model_ids)
-            model_count = len(model_ids) if isinstance(model_ids, list) else 1
-            
-            # Ottieni il dataset
-            dataset = Dataset.query.get(config.dataset_id)
-            
-            active_configs.append({
-                'config_id': config.config_id,
-                'dataset': dataset,
-                'model_count': model_count,
-                'timeframe': config.timeframe,
-                'risk_level': config.risk_level,
-                'is_active': config.is_active
-            })
-        except Exception as e:
-            logger.error(f"Errore nel processare la configurazione {config.config_id}: {str(e)}")
-    
-    return render_template(
-        'trading_signals.html',
-        models=models,
-        datasets=datasets,
-        active_configs=active_configs,
-        telegram_configured=telegram_configured
-    )
-
-@app.route('/create-signal-config', methods=['POST'])
-def create_signal_config_route():
-    """Crea una nuova configurazione di segnali di trading"""
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login'))
-    
-    try:
-        # Ottieni i parametri dal form
-        dataset_id = request.form.get('dataset_id', type=int)
-        model_ids = request.form.getlist('model_ids')
-        timeframe = request.form.get('timeframe', '1h')
-        risk_level = request.form.get('risk_level', type=int, default=2)
-        auto_tp_sl = request.form.get('auto_tp_sl') == 'on'
-        telegram_enabled = request.form.get('telegram_enabled') == 'on'
-        
-        # Validazione
-        if not dataset_id:
-            flash('Seleziona un dataset valido.', 'danger')
-            return redirect(url_for('trading_signals'))
-        
-        if not model_ids:
-            flash('Seleziona almeno un modello.', 'danger')
-            return redirect(url_for('trading_signals'))
-        
-        # Converte model_ids in interi
-        model_ids = [int(model_id) for model_id in model_ids]
-        
-        # Crea la nuova configurazione
-        config_id = create_signal_config(
-            user_id=user.id,
-            model_ids=model_ids,
-            dataset_id=dataset_id,
-            timeframe=timeframe,
-            risk_level=risk_level,
-            auto_tp_sl=auto_tp_sl,
-            telegram_enabled=telegram_enabled
-        )
-        
-        flash('Configurazione di segnali creata con successo! I segnali verranno inviati via Telegram quando rilevati.', 'success')
-        
-    except Exception as e:
-        logger.error(f"Errore nella creazione della configurazione di segnali: {str(e)}")
-        flash(f'Errore nella creazione della configurazione di segnali: {str(e)}', 'danger')
-    
-    return redirect(url_for('trading_signals'))
-
-@app.route('/toggle-signal-config/<string:config_id>/<string:action>', methods=['GET'])
-def toggle_signal_config(config_id, action):
-    """Avvia o ferma una configurazione di segnali"""
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Verifica che la configurazione appartenga all'utente
-    config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
-    if not config:
-        flash('Configurazione non trovata.', 'danger')
-        return redirect(url_for('trading_signals'))
-    
-    try:
-        if action == 'start':
-            # Avvia il generatore di segnali
-            result = start_signal_generator(config_id)
-            if result:
-                config.is_active = True
-                db.session.commit()
-                flash('Generatore di segnali avviato con successo!', 'success')
-            else:
-                flash('Impossibile avviare il generatore di segnali.', 'warning')
-                
-        elif action == 'stop':
-            # Ferma il generatore di segnali
-            stop_signal_generator(config_id)
-            config.is_active = False
-            db.session.commit()
-            flash('Generatore di segnali fermato.', 'success')
-            
-    except Exception as e:
-        logger.error(f"Errore nel {action} la configurazione {config_id}: {str(e)}")
-        flash(f'Errore: {str(e)}', 'danger')
-    
-    return redirect(url_for('trading_signals'))
-
-@app.route('/delete-signal-config/<string:config_id>', methods=['GET'])
-def delete_signal_config_route(config_id):
-    """Elimina una configurazione di segnali"""
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Verifica che la configurazione appartenga all'utente
-    config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
-    if not config:
-        flash('Configurazione non trovata.', 'danger')
-        return redirect(url_for('trading_signals'))
-    
-    try:
-        # Ferma ed elimina il generatore
-        delete_signal_config(config_id)
-        
-        # Elimina la configurazione dal database
-        db.session.delete(config)
-        db.session.commit()
-        
-        flash('Configurazione di segnali eliminata con successo.', 'success')
-        
-    except Exception as e:
-        logger.error(f"Errore nell'eliminazione della configurazione {config_id}: {str(e)}")
-        flash(f'Errore: {str(e)}', 'danger')
-    
-    return redirect(url_for('trading_signals'))
-
-@app.route('/test-telegram/<string:type>', methods=['GET'])
-def test_telegram(type='balance'):
-    """Invia un messaggio di test via Telegram"""
-    user = get_current_user()
-    if not user:
-        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
-        return redirect(url_for('login'))
-    
-    if not user.telegram_bot_token or not user.telegram_chat_id:
-        flash('Configura prima le tue credenziali Telegram.', 'warning')
-        return redirect(url_for('profile'))
-    
-    try:
-        success = False
-        
-        if type == 'signal':
-            # Invia un segnale di test
-            message = f"🔔 SEGNALE DI TRADING (TEST)\n\n"
-            message += f"Simbolo: BTC/USDT\n"
-            message += f"Prezzo: 50000.00\n"
-            message += f"Segnale: LONG\n"
-            message += f"Take Profit: 52500.00\n"
-            message += f"Stop Loss: 48750.00\n"
-            message += f"Volume consigliato: 2.5%\n"
-            message += f"Confidenza: 0.85\n"
-            message += f"Timeframe: 1h\n"
-            message += f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
-            
-            success = send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
-        
-        elif type == 'price':
-            # Invia una notifica prezzo di test
-            success = send_price_alert(user, "BTC/USDT", 50000.00, "threshold", 5.5)
-        
-        else:
-            # Invia una notifica saldo di test
-            test_balance = {
-                'total_balance': 1000.00,
-                'currencies': {
-                    'BTC': 0.02,
-                    'ETH': 0.5,
-                    'USDT': 500
-                }
-            }
-            success = send_balance_update(user, test_balance)
-        
-        if success:
-            flash('Notifica di test inviata con successo! Controlla Telegram.', 'success')
-        else:
-            flash('Errore nell\'invio della notifica Telegram. Verifica le tue credenziali.', 'danger')
-    
-    except Exception as e:
-        logger.error(f"Errore nell'invio della notifica di test: {str(e)}")
-        flash(f'Errore: {str(e)}', 'danger')
-    
-    return redirect(request.referrer or url_for('index'))
 
 @app.context_processor
 def inject_globals():
