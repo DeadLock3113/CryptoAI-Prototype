@@ -399,6 +399,54 @@
 <!-- Training Visualizer Script -->
 <script src="{{ url_for('static', filename='js/training-visualizer.js') }}"></script>
 <script>
+    // Esponiamo una funzione di gestione delle epoche per la simulazione locale
+    window.handleEpochComplete = function(data) {
+        // Aggiorna epoca corrente
+        document.getElementById('current-epoch').textContent = data.epoch;
+        
+        // Aggiorna loss
+        document.getElementById('current-loss').textContent = data.loss.toFixed(4);
+        
+        // Aggiorna barra di progresso
+        const progress = (data.epoch / data.total_epochs) * 100;
+        const progressBar = document.getElementById('training-progress-bar');
+        progressBar.style.width = progress + '%';
+        progressBar.textContent = progress.toFixed(0) + '%';
+        
+        // Aggiorna metriche nella tabella
+        if (data.metrics) {
+            document.getElementById('metric-mse').textContent = data.metrics.mse?.toFixed(4) || '-';
+            document.getElementById('metric-rmse').textContent = data.metrics.rmse?.toFixed(4) || '-';
+            document.getElementById('metric-mae').textContent = data.metrics.mae?.toFixed(4) || '-';
+            document.getElementById('metric-r2').textContent = data.metrics.r2?.toFixed(4) || '-';
+            
+            document.getElementById('update-mse').textContent = data.metrics.calculated_at || '-';
+            document.getElementById('update-rmse').textContent = data.metrics.calculated_at || '-';
+            document.getElementById('update-mae').textContent = data.metrics.calculated_at || '-';
+            document.getElementById('update-r2').textContent = data.metrics.calculated_at || '-';
+        }
+        
+        // Aggiorna tempo trascorso
+        document.getElementById('time-elapsed').textContent = formatTime(data.elapsed_time);
+        
+        // Calcola tempo rimanente stimato
+        const timePerEpoch = data.elapsed_time / data.epoch;
+        const remainingEpochs = data.total_epochs - data.epoch;
+        const estimatedTimeRemaining = timePerEpoch * remainingEpochs;
+        document.getElementById('time-remaining').textContent = formatTime(estimatedTimeRemaining);
+        
+        // Aggiorna il grafico
+        if (window.trainingChart) {
+            window.trainingChart.data.labels.push('Epoca ' + data.epoch);
+            window.trainingChart.data.datasets[0].data.push(data.loss);
+            window.trainingChart.data.datasets[1].data.push(data.val_loss);
+            window.trainingChart.update();
+        }
+        
+        // Aggiunta al log
+        appendToLog(`Epoca ${data.epoch}/${data.total_epochs} completata. Loss: ${data.loss.toFixed(4)}, Val Loss: ${data.val_loss.toFixed(4)}`);
+    };
+    
     // Helper per formattare i tempi
     function formatTime(seconds) {
         if (seconds < 60) {
@@ -641,7 +689,11 @@
                     setTimeout(initEventSource, 2000);
                 } else {
                     document.getElementById('training-status').textContent = 
-                        'Impossibile stabilire la connessione. Ricarica la pagina per riprovare.';
+                        'Utilizzando la modalità simulazione locale per visualizzare l\'addestramento';
+                    
+                    // Avvia la simulazione locale dopo ripetuti tentativi falliti
+                    console.log("Avvio della simulazione locale dopo tentativi di connessione falliti");
+                    startLocalSimulation();
                 }
             });
             
