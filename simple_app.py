@@ -48,6 +48,48 @@ db = SQLAlchemy(app)
 # Cache in-memory per migliorare le performance
 _memory_cache = {}
 
+# Crea le tabelle per le notifiche e i segnali se non esistono
+def create_custom_tables():
+    with app.app_context():
+        # Tabella notification_settings
+        db.session.execute(db.text('''
+            CREATE TABLE IF NOT EXISTS notification_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE NOT NULL,
+                timeframe VARCHAR(10) DEFAULT '1h',
+                enabled BOOLEAN DEFAULT 0,
+                last_notification TIMESTAMP,
+                price_change_threshold FLOAT DEFAULT 1.0,
+                volume_change_threshold FLOAT DEFAULT 20.0,
+                FOREIGN KEY (user_id) REFERENCES user(id)
+            )
+        '''))
+        
+        # Tabella signal_config
+        db.session.execute(db.text('''
+            CREATE TABLE IF NOT EXISTS signal_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_id VARCHAR(64) UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                model_ids TEXT NOT NULL,
+                dataset_id INTEGER NOT NULL,
+                timeframe VARCHAR(10) DEFAULT '1h',
+                risk_level INTEGER DEFAULT 2,
+                auto_tp_sl BOOLEAN DEFAULT 1,
+                telegram_enabled BOOLEAN DEFAULT 1,
+                is_active BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES user(id),
+                FOREIGN KEY (dataset_id) REFERENCES dataset(id)
+            )
+        '''))
+        db.session.commit()
+        logger.info("Tabelle personalizzate create con successo")
+
+# Crea le tabelle personalizzate all'avvio
+create_custom_tables()
+
 # Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
