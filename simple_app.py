@@ -1826,17 +1826,18 @@ def models():
 @app.route('/update_notification_settings', methods=['POST'])
 def update_notification_settings():
     """Aggiorna le impostazioni di notifica dell'utente"""
-    from flask_login import current_user
     from db_models import NotificationSettings
     
-    if not current_user.is_authenticated:
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
         flash('Devi accedere per aggiornare le impostazioni di notifica.', 'danger')
         return redirect(url_for('login'))
     
     # Ottieni o crea il record delle impostazioni di notifica
-    settings = NotificationSettings.query.filter_by(user_id=current_user.id).first()
+    settings = NotificationSettings.query.filter_by(user_id=user.id).first()
     if not settings:
-        settings = NotificationSettings(user_id=current_user.id)
+        settings = NotificationSettings(user_id=user.id)
         db.session.add(settings)
     
     # Aggiorna le impostazioni
@@ -1860,23 +1861,25 @@ def clear_data():
 @app.route('/trading_signals')
 def trading_signals():
     """Pagina per la gestione dei segnali di trading basati su AI"""
-    from flask_login import current_user
     from db_models import MLModel, SignalConfig, Dataset
     
-    if not current_user.is_authenticated:
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
         flash('Devi accedere per visualizzare i segnali di trading.', 'danger')
         return redirect(url_for('login'))
     
     # Ottieni i modelli disponibili
-    ml_models = MLModel.query.filter_by(user_id=current_user.id).all()
+    ml_models = MLModel.query.filter_by(user_id=user.id).all()
     
     # Ottieni le configurazioni dei segnali
-    signal_configs = SignalConfig.query.filter_by(user_id=current_user.id).all()
+    signal_configs = SignalConfig.query.filter_by(user_id=user.id).all()
     
     # Ottieni i dataset disponibili
-    datasets = Dataset.query.filter_by(user_id=current_user.id).all()
+    datasets = Dataset.query.filter_by(user_id=user.id).all()
     
     return render_template('trading_signals.html', 
+                          user_datasets=datasets,
                           signal_configs=signal_configs,
                           ml_models=ml_models,
                           datasets=datasets)
@@ -1884,10 +1887,11 @@ def trading_signals():
 @app.route('/create_signal_config', methods=['POST'])
 def create_signal_config_route():
     """Crea una nuova configurazione di segnali di trading"""
-    from flask_login import current_user
     from db_models import Dataset, SignalConfig
     
-    if not current_user.is_authenticated:
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
         flash('Devi accedere per creare configurazioni di segnali.', 'danger')
         return redirect(url_for('login'))
     
@@ -1911,7 +1915,7 @@ def create_signal_config_route():
         
         # Crea la nuova configurazione
         signal_config = SignalConfig(
-            user_id=current_user.id,
+            user_id=user.id,
             dataset_id=dataset_id,
             config_id=config_id,
             timeframe=timeframe,
@@ -1938,15 +1942,16 @@ def create_signal_config_route():
 @app.route('/toggle_signal_config/<config_id>/<action>')
 def toggle_signal_config(config_id, action):
     """Avvia o ferma una configurazione di segnali"""
-    from flask_login import current_user
     from db_models import SignalConfig
     
-    if not current_user.is_authenticated:
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
         flash('Devi accedere per gestire le configurazioni di segnali.', 'danger')
         return redirect(url_for('login'))
     
     # Verifica che la configurazione esista
-    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=current_user.id).first()
+    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
     if not signal_config:
         flash('Configurazione non trovata.', 'danger')
         return redirect(url_for('trading_signals'))
@@ -1983,15 +1988,16 @@ def toggle_signal_config(config_id, action):
 @app.route('/delete_signal_config/<config_id>')
 def delete_signal_config_route(config_id):
     """Elimina una configurazione di segnali"""
-    from flask_login import current_user
     from db_models import SignalConfig
     
-    if not current_user.is_authenticated:
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
         flash('Devi accedere per eliminare le configurazioni di segnali.', 'danger')
         return redirect(url_for('login'))
     
     # Verifica che la configurazione esista
-    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=current_user.id).first()
+    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
     if not signal_config:
         flash('Configurazione non trovata.', 'danger')
         return redirect(url_for('trading_signals'))
