@@ -3616,6 +3616,229 @@ def delete_api_profile(profile_id):
         return jsonify({'success': False, 'message': f'Errore: {str(e)}'})
 
 
+# Rotte per i segnali di trading basati su AI
+@app.route('/trading-signals', methods=['GET'])
+def trading_signals():
+    """Pagina per la gestione dei segnali di trading basati su AI"""
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login', next=request.url))
+    
+    # Verifica se l'utente ha configurato Telegram
+    telegram_configured = bool(user.telegram_bot_token and user.telegram_chat_id)
+    
+    # Ottieni tutti i modelli ML dell'utente
+    models = MLModel.query.filter_by(user_id=user.id).all()
+    
+    # Ottieni tutti i dataset dell'utente
+    datasets = Dataset.query.filter_by(user_id=user.id).all()
+    
+    # Ottieni le configurazioni di segnali attive
+    signal_configs = SignalConfig.query.filter_by(user_id=user.id).all()
+    
+    # Prepara i dati per il template
+    active_configs = []
+    for config in signal_configs:
+        try:
+            model_ids = json.loads(config.model_ids)
+            model_count = len(model_ids) if isinstance(model_ids, list) else 1
+            
+            # Ottieni il dataset
+            dataset = Dataset.query.get(config.dataset_id)
+            
+            active_configs.append({
+                'config_id': config.config_id,
+                'dataset': dataset,
+                'model_count': model_count,
+                'timeframe': config.timeframe,
+                'risk_level': config.risk_level,
+                'is_active': config.is_active
+            })
+        except Exception as e:
+            logger.error(f"Errore nel processare la configurazione {config.config_id}: {str(e)}")
+    
+    return render_template(
+        'trading_signals.html',
+        models=models,
+        datasets=datasets,
+        active_configs=active_configs,
+        telegram_configured=telegram_configured
+    )
+
+@app.route('/create-signal-config', methods=['POST'])
+def create_signal_config_route():
+    """Crea una nuova configurazione di segnali di trading"""
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login'))
+    
+    try:
+        # Ottieni i parametri dal form
+        dataset_id = request.form.get('dataset_id', type=int)
+        model_ids = request.form.getlist('model_ids')
+        timeframe = request.form.get('timeframe', '1h')
+        risk_level = request.form.get('risk_level', type=int, default=2)
+        auto_tp_sl = request.form.get('auto_tp_sl') == 'on'
+        telegram_enabled = request.form.get('telegram_enabled') == 'on'
+        
+        # Validazione
+        if not dataset_id:
+            flash('Seleziona un dataset valido.', 'danger')
+            return redirect(url_for('trading_signals'))
+        
+        if not model_ids:
+            flash('Seleziona almeno un modello.', 'danger')
+            return redirect(url_for('trading_signals'))
+        
+        # Converte model_ids in interi
+        model_ids = [int(model_id) for model_id in model_ids]
+        
+        # Crea la nuova configurazione
+        config_id = create_signal_config(
+            user_id=user.id,
+            model_ids=model_ids,
+            dataset_id=dataset_id,
+            timeframe=timeframe,
+            risk_level=risk_level,
+            auto_tp_sl=auto_tp_sl,
+            telegram_enabled=telegram_enabled
+        )
+        
+        flash('Configurazione di segnali creata con successo! I segnali verranno inviati via Telegram quando rilevati.', 'success')
+        
+    except Exception as e:
+        logger.error(f"Errore nella creazione della configurazione di segnali: {str(e)}")
+        flash(f'Errore nella creazione della configurazione di segnali: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
+@app.route('/toggle-signal-config/<string:config_id>/<string:action>', methods=['GET'])
+def toggle_signal_config(config_id, action):
+    """Avvia o ferma una configurazione di segnali"""
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Verifica che la configurazione appartenga all'utente
+    config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
+    if not config:
+        flash('Configurazione non trovata.', 'danger')
+        return redirect(url_for('trading_signals'))
+    
+    try:
+        if action == 'start':
+            # Avvia il generatore di segnali
+            result = start_signal_generator(config_id)
+            if result:
+                config.is_active = True
+                db.session.commit()
+                flash('Generatore di segnali avviato con successo!', 'success')
+            else:
+                flash('Impossibile avviare il generatore di segnali.', 'warning')
+                
+        elif action == 'stop':
+            # Ferma il generatore di segnali
+            stop_signal_generator(config_id)
+            config.is_active = False
+            db.session.commit()
+            flash('Generatore di segnali fermato.', 'success')
+            
+    except Exception as e:
+        logger.error(f"Errore nel {action} la configurazione {config_id}: {str(e)}")
+        flash(f'Errore: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
+@app.route('/delete-signal-config/<string:config_id>', methods=['GET'])
+def delete_signal_config_route(config_id):
+    """Elimina una configurazione di segnali"""
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login'))
+    
+    # Verifica che la configurazione appartenga all'utente
+    config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
+    if not config:
+        flash('Configurazione non trovata.', 'danger')
+        return redirect(url_for('trading_signals'))
+    
+    try:
+        # Ferma ed elimina il generatore
+        delete_signal_config(config_id)
+        
+        # Elimina la configurazione dal database
+        db.session.delete(config)
+        db.session.commit()
+        
+        flash('Configurazione di segnali eliminata con successo.', 'success')
+        
+    except Exception as e:
+        logger.error(f"Errore nell'eliminazione della configurazione {config_id}: {str(e)}")
+        flash(f'Errore: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
+@app.route('/test-telegram/<string:type>', methods=['GET'])
+def test_telegram(type='balance'):
+    """Invia un messaggio di test via Telegram"""
+    user = get_current_user()
+    if not user:
+        flash('Devi effettuare il login per accedere a questa pagina.', 'warning')
+        return redirect(url_for('login'))
+    
+    if not user.telegram_bot_token or not user.telegram_chat_id:
+        flash('Configura prima le tue credenziali Telegram.', 'warning')
+        return redirect(url_for('profile'))
+    
+    try:
+        success = False
+        
+        if type == 'signal':
+            # Invia un segnale di test
+            message = f"🔔 SEGNALE DI TRADING (TEST)\n\n"
+            message += f"Simbolo: BTC/USDT\n"
+            message += f"Prezzo: 50000.00\n"
+            message += f"Segnale: LONG\n"
+            message += f"Take Profit: 52500.00\n"
+            message += f"Stop Loss: 48750.00\n"
+            message += f"Volume consigliato: 2.5%\n"
+            message += f"Confidenza: 0.85\n"
+            message += f"Timeframe: 1h\n"
+            message += f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+            
+            success = send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+        
+        elif type == 'price':
+            # Invia una notifica prezzo di test
+            success = send_price_alert(user, "BTC/USDT", 50000.00, "threshold", 5.5)
+        
+        else:
+            # Invia una notifica saldo di test
+            test_balance = {
+                'total_balance': 1000.00,
+                'currencies': {
+                    'BTC': 0.02,
+                    'ETH': 0.5,
+                    'USDT': 500
+                }
+            }
+            success = send_balance_update(user, test_balance)
+        
+        if success:
+            flash('Notifica di test inviata con successo! Controlla Telegram.', 'success')
+        else:
+            flash('Errore nell\'invio della notifica Telegram. Verifica le tue credenziali.', 'danger')
+    
+    except Exception as e:
+        logger.error(f"Errore nell'invio della notifica di test: {str(e)}")
+        flash(f'Errore: {str(e)}', 'danger')
+    
+    return redirect(request.referrer or url_for('index'))
+
 @app.context_processor
 def inject_globals():
     """Inject global variables into templates"""
