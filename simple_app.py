@@ -2005,7 +2005,14 @@ def trading_signals():
         ml_models_query = db.session.execute(db.text(
             "SELECT id, name, model_type FROM ml_model WHERE user_id = :user_id"
         ), {"user_id": user.id})
-        ml_models = [dict(row) for row in ml_models_query]
+        # Converti i risultati in una lista di dizionari
+        ml_models = []
+        for row in ml_models_query:
+            ml_models.append({
+                "id": row[0],
+                "name": row[1],
+                "model_type": row[2]
+            })
         
         # Ottieni le configurazioni dei segnali usando SQL raw
         signal_configs_query = db.session.execute(db.text(
@@ -2016,13 +2023,32 @@ def trading_signals():
                JOIN dataset d ON sc.dataset_id = d.id
                WHERE sc.user_id = :user_id"""
         ), {"user_id": user.id})
-        signal_configs = [dict(row) for row in signal_configs_query]
+        # Converti i risultati in una lista di dizionari
+        signal_configs = []
+        for row in signal_configs_query:
+            signal_configs.append({
+                "id": row[0],
+                "config_id": row[1],
+                "timeframe": row[2],
+                "risk_level": row[3],
+                "auto_tp_sl": row[4],
+                "telegram_enabled": row[5],
+                "is_active": row[6],
+                "dataset_name": row[7]
+            })
         
         # Ottieni i dataset disponibili usando SQL raw
         datasets_query = db.session.execute(db.text(
             "SELECT id, name, symbol FROM dataset WHERE user_id = :user_id"
         ), {"user_id": user.id})
-        datasets = [dict(row) for row in datasets_query]
+        # Converti i risultati in una lista di dizionari
+        datasets = []
+        for row in datasets_query:
+            datasets.append({
+                "id": row[0],
+                "name": row[1],
+                "symbol": row[2]
+            })
         
         return render_template('trading_signals.html', 
                             user_datasets=datasets,
