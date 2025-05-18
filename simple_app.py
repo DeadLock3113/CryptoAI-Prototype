@@ -1957,6 +1957,53 @@ def update_notification_settings():
     
     return redirect(url_for('profile'))
 
+@app.route('/delete_ml_model/<int:model_id>')
+def delete_ml_model(model_id):
+    """Elimina un modello AI"""
+    # Check if user is logged in
+    user = get_current_user()
+    if not user:
+        flash('Devi accedere per eliminare i modelli.', 'danger')
+        return redirect(url_for('login'))
+    
+    try:
+        # Verifica che il modello appartenga all'utente
+        model_check = db.session.execute(db.text(
+            "SELECT id FROM ml_model WHERE id = :model_id AND user_id = :user_id"
+        ), {"model_id": model_id, "user_id": user.id}).fetchone()
+        
+        if not model_check:
+            flash('Modello non trovato o non hai i permessi necessari.', 'danger')
+            return redirect(url_for('trading_signals'))
+        
+        # Ottiene il nome del modello per il messaggio
+        model_name = db.session.execute(db.text(
+            "SELECT name FROM ml_model WHERE id = :model_id"
+        ), {"model_id": model_id}).fetchone()
+        
+        model_name_str = model_name[0] if model_name else f"#{model_id}"
+        
+        # Elimina il modello
+        db.session.execute(db.text(
+            "DELETE FROM ml_model WHERE id = :model_id AND user_id = :user_id"
+        ), {"model_id": model_id, "user_id": user.id})
+        
+        # Elimina anche le previsioni associate
+        db.session.execute(db.text(
+            "DELETE FROM prediction WHERE ml_model_id = :model_id"
+        ), {"model_id": model_id})
+        
+        # Commit delle modifiche
+        db.session.commit()
+        
+        flash(f'Modello AI "{model_name_str}" eliminato con successo.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Errore durante l'eliminazione del modello: {str(e)}")
+        flash(f"Si è verificato un errore durante l'eliminazione del modello: {str(e)}", 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
 @app.route('/clear_data')
 def clear_data():
     """Clear session data and return to home page"""
@@ -2110,6 +2157,7 @@ def create_signal_config_route():
             "risk_level": risk_level,
             "auto_tp_sl": auto_tp_sl,
             "telegram_enabled": telegram_enabled,
+            "auto_calculate": auto_calculate,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         })
