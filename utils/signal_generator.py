@@ -12,11 +12,14 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+import os
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from flask import current_app
+from sqlalchemy.orm import Session
+from sqlalchemy.ext.declarative import declarative_base
 
 # Import dei moduli interni
 from database import db
