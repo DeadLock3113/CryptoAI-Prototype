@@ -196,3 +196,25 @@ class Prediction(db.Model):
     
     def __repr__(self):
         return f'<Prediction {self.timestamp} {self.value}>'
+
+class SignalConfig(db.Model):
+    """Configurazione per la generazione di segnali di trading basati su AI"""
+    id = db.Column(db.Integer, primary_key=True)
+    config_id = db.Column(db.String(64), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    model_ids = db.Column(db.String(256), nullable=False)  # JSON lista di ID dei modelli
+    dataset_id = db.Column(db.Integer, db.ForeignKey('dataset.id'), nullable=False)
+    timeframe = db.Column(db.String(10), default='1h')
+    risk_level = db.Column(db.Integer, default=2)
+    auto_tp_sl = db.Column(db.Boolean, default=True)
+    telegram_enabled = db.Column(db.Boolean, default=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('signal_configs', lazy='dynamic'))
+    dataset = db.relationship('Dataset', backref=db.backref('signal_configs', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<SignalConfig {self.config_id}>'

@@ -43,6 +43,9 @@ import training_handler
 from strategies.custom_strategy import CustomStrategy, CustomStrategyBuilder, TradingSignal
 from strategies.strategy_optimizer import StrategyOptimizer
 
+# Importa il generatore di segnali di trading
+from utils.signal_generator import create_signal_config, get_signal_config, start_signal_generator, stop_signal_generator, delete_signal_config, get_user_signal_configs
+
 # Patch per risolvere il problema con optimize=True in savefig
 # Questa è una soluzione più completa che intercetta anche le chiamate interne
 # di matplotlib che potrebbero utilizzare il parametro optimize

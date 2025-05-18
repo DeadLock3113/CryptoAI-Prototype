@@ -137,3 +137,33 @@ def send_balance_update(user, balance_info):
     
     # Invia il messaggio Telegram
     return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message)
+
+def send_signal_notification(user_id, message_text):
+    """
+    Invia una notifica di segnale di trading via Telegram.
+    
+    Args:
+        user_id (int): ID dell'utente
+        message_text (str): Testo del messaggio con dettagli del segnale
+        
+    Returns:
+        bool: True se l'invio è avvenuto con successo, False altrimenti
+    """
+    try:
+        # Importa i modelli necessari
+        from db_models import User
+        from app import db
+        
+        # Ottieni l'utente dal database
+        user = User.query.get(user_id)
+        
+        if not user or not user.telegram_bot_token or not user.telegram_chat_id:
+            logger.warning(f"Utente {user_id} non ha configurato Telegram")
+            return False
+        
+        # Invia il messaggio già formattato
+        return send_telegram_message(user.telegram_bot_token, user.telegram_chat_id, message_text)
+        
+    except Exception as e:
+        logger.error(f"Errore nell'invio della notifica di segnale: {str(e)}")
+        return False
