@@ -19,7 +19,8 @@ from sqlalchemy import create_engine
 from flask import current_app
 
 # Import dei moduli interni
-from db_models import db, User, MLModel, Dataset, PriceData, SignalConfig
+from database import db
+from db_models import User, MLModel, Dataset, PriceData, SignalConfig
 from utils.technical_indicators import add_indicators
 from utils.telegram_notification import send_telegram_message, send_signal_notification
 

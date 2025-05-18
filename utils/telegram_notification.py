@@ -9,7 +9,8 @@ import logging
 import requests
 from datetime import datetime
 
-from db_models import User, db
+from database import db
+from db_models import User
 
 # Configurazione logging
 logger = logging.getLogger(__name__)
