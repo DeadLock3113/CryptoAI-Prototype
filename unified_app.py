@@ -36,12 +36,11 @@ with app.app_context():
     from db_models import User, Dataset, PriceData, Indicator, Strategy, Backtest, MLModel, Prediction, ApiProfile, SignalConfig
     db.create_all()
     
-# Importa le restanti funzionalità da simple_app
-from simple_app import (
-    update_database_schema, get_current_user, login, logout, register, 
-    profile, index, analysis, indicators, backtest, models,
-    upload, custom_strategy, training_visualizer
-)
+# Importa solo le funzioni esistenti da simple_app
+from simple_app import get_current_user, login, logout, register, profile, index, analysis
+from simple_app import indicators, backtest, models, upload
+from simple_app import trading_signals, create_signal_config_route, toggle_signal_config
+from simple_app import delete_signal_config_route, update_notification_settings
 
 if __name__ == "__main__":
     app.run(debug=True)
