@@ -2021,6 +2021,51 @@ def clear_data():
     flash('Dati di sessione eliminati con successo.', 'success')
     return redirect(url_for('index'))
 
+@app.route('/clean_database')
+def clean_database():
+    """Pulisce il database dai dati sensibili per testing"""
+    try:
+        # Check if user is logged in
+        user = get_current_user()
+        if not user:
+            flash('Devi accedere per eseguire questa operazione.', 'danger')
+            return redirect(url_for('login'))
+            
+        # Pulisci le API keys e token Telegram
+        db.session.execute(db.text("""
+            UPDATE user SET 
+            binance_api_key = NULL,
+            binance_api_secret = NULL,
+            kraken_api_key = NULL,
+            kraken_api_secret = NULL,
+            telegram_bot_token = NULL,
+            telegram_chat_id = NULL
+        """))
+        
+        # Elimina i profili API se esistono
+        try:
+            db.session.execute(db.text("DELETE FROM api_profile"))
+        except:
+            logger.debug("Tabella api_profile non trovata o vuota.")
+            
+        # Reset password (password: 'password')
+        test_password = 'pbkdf2:sha256:600000$oAOKztbGaQ1W3emg$bbe1fcf175c4d53e3f46cc1af58f6c10f92e58ddf71b1e3d6c07a179f6b17cc7'
+        db.session.execute(db.text("UPDATE user SET password_hash = :pwd WHERE id = :id"), 
+                          {"pwd": test_password, "id": user.id})
+        
+        # Commit delle modifiche
+        db.session.commit()
+        
+        flash('Database pulito con successo. Password impostata a: "password"', 'success')
+        # Logout dell'utente
+        session.clear()
+        return redirect(url_for('login'))
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Errore durante la pulizia del database: {str(e)}")
+        flash(f"Si è verificato un errore durante la pulizia: {str(e)}", 'danger')
+        return redirect(url_for('index'))
+
 # Gestione dei segnali di trading basati su AI
 @app.route('/trading_signals')
 def trading_signals():
