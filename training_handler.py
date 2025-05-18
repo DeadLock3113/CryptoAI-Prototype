@@ -29,6 +29,9 @@ class TrainingSession:
     def __init__(self, training_id, model_type, model_name, dataset_id, dataset_name,
                  epochs, batch_size, lookback, learning_rate, device, demo_mode=True):
         """Inizializza una nuova sessione di addestramento"""
+        # Se è un deploy, impostiamo sempre demo_mode=False per avere l'addestramento completo
+        if os.environ.get('REPLIT_DEPLOYMENT') == '1':
+            demo_mode = False
         self.training_id = training_id
         self.model_type = model_type
         self.model_name = model_name

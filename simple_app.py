@@ -17,6 +17,9 @@ import math
 import random
 import json
 from datetime import datetime
+
+# Controlla se siamo in modalità deploy
+IS_DEPLOYED = os.environ.get('REPLIT_DEPLOYMENT') == '1'
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -1898,7 +1901,7 @@ def training_visualizer(training_id):
         lookback=training_data.get('lookback', 30),
         learning_rate=training_data.get('learning_rate', 0.001),
         device='cpu',
-        demo_mode=True
+        demo_mode=not IS_DEPLOYED  # Modalità demo solo se non siamo in deploy
     )
 
 @app.route('/training-progress/<string:training_id>')
@@ -2350,7 +2353,7 @@ def models():
                     lookback=lookback,
                     learning_rate=lr,
                     device=str(device),
-                    demo_mode=True  # Usiamo la modalità demo per la visualizzazione interattiva
+                    demo_mode=not IS_DEPLOYED  # Modalità demo solo se non siamo in deploy
                 )
                 
                 # Avvieremo l'addestramento quando l'utente accede alla pagina
@@ -2376,8 +2379,13 @@ def models():
             # OPZIONE 2: Modalità demo originale (addestramento limitato nella request HTTP)
             else:
                 # Training loop con limitazioni per evitare timeout
-                max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
-                logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
+                # Se siamo in deploy, utilizziamo tutte le epoche richieste, altrimenti limitiamo
+                if IS_DEPLOYED:
+                    max_training_epochs = epochs
+                    logger.debug(f"Modalità completa: addestramento con {max_training_epochs} epoche")
+                else:
+                    max_training_epochs = min(epochs, 2)  # Limitiamo a 2 epoche per evitare timeout
+                    logger.debug(f"Modalità demo: addestramento limitato a {max_training_epochs} epoche")
                 
                 for epoch in range(max_training_epochs):
                     # Training
