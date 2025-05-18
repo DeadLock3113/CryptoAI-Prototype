@@ -24,6 +24,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from functools import wraps
 
+# Importa le classi del database
+from db_models import User, Dataset, PriceData, Indicator, Strategy, Backtest, MLModel, Prediction, ApiProfile
+
 # Import utility modules
 from utils.telegram_notification import send_price_alert, send_balance_update
 from utils.exchange_api import get_account_balances, ExchangeAPIError
