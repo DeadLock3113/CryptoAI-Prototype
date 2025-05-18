@@ -1814,19 +1814,64 @@ def training_visualizer(training_id):
             'lookback': training_data.get('lookback', 30)
         }
         
-        # Crea nuovo modello nel database
-        new_model = MLModel(
-            name=model_name,
-            model_type=model_type,
-            parameters=model_params,
-            metrics=model_metrics,
-            created_at=datetime.utcnow(),
-            user_id=user.id,
-            dataset_id=dataset_id
-        )
-        
-        db.session.add(new_model)
-        db.session.commit()
+        # Crea nuovo modello direttamente nel database usando SQL
+        try:
+            # Inserisci il modello usando SQL diretto invece di ORM
+            with db.engine.connect() as conn:
+                conn.execute(
+                    text("""INSERT INTO ml_model 
+                    (name, model_type, parameters, metrics, created_at, user_id, dataset_id)
+                    VALUES (:name, :model_type, :parameters, :metrics, :created_at, :user_id, :dataset_id)"""),
+                    {
+                        "name": model_name,
+                        "model_type": model_type,
+                        "parameters": json.dumps(model_params),
+                        "metrics": json.dumps(model_metrics),
+                        "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                        "user_id": user.id,
+                        "dataset_id": dataset_id
+                    }
+                )
+                conn.commit()
+            logger.info(f"Modello {model_name} salvato con successo")
+        except Exception as e:
+            logger.error(f"Errore durante il salvataggio del modello: {str(e)}")
+            if "no such table: ml_model" in str(e):
+                # Crea la tabella se non esiste
+                with db.engine.connect() as conn:
+                    conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ml_model (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name VARCHAR(128) NOT NULL,
+                        model_type VARCHAR(50) NOT NULL,
+                        parameters TEXT,
+                        metrics TEXT,
+                        model_path VARCHAR(256),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        user_id INTEGER NOT NULL,
+                        dataset_id INTEGER
+                    )
+                    """))
+                    # Prova di nuovo a inserire il modello
+                    conn.execute(
+                        text("""INSERT INTO ml_model 
+                        (name, model_type, parameters, metrics, created_at, user_id, dataset_id)
+                        VALUES (:name, :model_type, :parameters, :metrics, :created_at, :user_id, :dataset_id)"""),
+                        {
+                            "name": model_name,
+                            "model_type": model_type,
+                            "parameters": json.dumps(model_params),
+                            "metrics": json.dumps(model_metrics),
+                            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                            "user_id": user.id,
+                            "dataset_id": dataset_id
+                        }
+                    )
+                    conn.commit()
+                logger.info("Tabella ml_model creata e modello salvato con successo")
+            else:
+                # Se l'errore è diverso, rilancia l'eccezione
+                raise
         
         flash(f'Modello "{model_name}" creato con successo in modalità semplificata!', 'success')
         
