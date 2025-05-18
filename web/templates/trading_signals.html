@@ -71,17 +71,23 @@
                             <option value="5">5 - Molto Aggressivo</option>
                         </select>
                     </div>
-                    <div class="col-md-6 d-flex align-items-center">
-                        <div class="form-check me-3">
+                    <div class="col-md-6">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="auto_tp_sl" name="auto_tp_sl" checked>
                             <label class="form-check-label" for="auto_tp_sl">
-                                Calcolo automatico TP/SL
+                                Calcolo automatico TP/SL e Volume
                             </label>
                         </div>
-                        <div class="form-check">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="telegram_enabled" name="telegram_enabled" checked>
                             <label class="form-check-label" for="telegram_enabled">
                                 Notifiche Telegram
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="auto_calculate" name="auto_calculate" checked>
+                            <label class="form-check-label" for="auto_calculate">
+                                Abilita calcoli automatici
                             </label>
                         </div>
                     </div>
@@ -93,6 +99,45 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Modelli AI Disponibili</h5>
+        </div>
+        <div class="card-body">
+            {% if ml_models %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nome Modello</th>
+                            <th>Tipo</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for model in ml_models %}
+                        <tr>
+                            <td>{{ model.name }}</td>
+                            <td>{{ model.model_type }}</td>
+                            <td>
+                                <a href="{{ url_for('delete_ml_model', model_id=model.id) }}" 
+                                   class="btn btn-sm btn-danger" title="Elimina" 
+                                   onclick="return confirm('Sei sicuro di voler eliminare questo modello AI?');">
+                                    <i class="fas fa-trash"></i> Elimina Modello
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                Non ci sono modelli AI disponibili. Vai alla sezione Modelli per crearne alcuni.
+            </div>
+            {% endif %}
         </div>
     </div>
     

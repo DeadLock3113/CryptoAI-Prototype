@@ -2017,7 +2017,7 @@ def trading_signals():
         # Ottieni le configurazioni dei segnali usando SQL raw
         signal_configs_query = db.session.execute(db.text(
             """SELECT sc.id, sc.config_id, sc.timeframe, sc.risk_level, 
-                      sc.auto_tp_sl, sc.telegram_enabled, sc.is_active,
+                      sc.auto_tp_sl, sc.telegram_enabled, sc.is_active, sc.auto_calculate,
                       d.name as dataset_name
                FROM signal_config sc
                JOIN dataset d ON sc.dataset_id = d.id
@@ -2034,7 +2034,8 @@ def trading_signals():
                 "auto_tp_sl": row[4],
                 "telegram_enabled": row[5],
                 "is_active": row[6],
-                "dataset_name": row[7]
+                "auto_calculate": row[7] if len(row) > 8 else True,
+                "dataset_name": row[8] if len(row) > 8 else row[7]
             })
         
         # Ottieni i dataset disponibili usando SQL raw
