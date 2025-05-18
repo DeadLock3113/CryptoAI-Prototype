@@ -1826,6 +1826,9 @@ def models():
 @app.route('/update_notification_settings', methods=['POST'])
 def update_notification_settings():
     """Aggiorna le impostazioni di notifica dell'utente"""
+    from flask_login import current_user
+    from db_models import NotificationSettings
+    
     if not current_user.is_authenticated:
         flash('Devi accedere per aggiornare le impostazioni di notifica.', 'danger')
         return redirect(url_for('login'))
@@ -1852,6 +1855,158 @@ def clear_data():
     session.clear()
     flash('Dati di sessione eliminati con successo.', 'success')
     return redirect(url_for('index'))
+
+# Gestione dei segnali di trading basati su AI
+@app.route('/trading_signals')
+def trading_signals():
+    """Pagina per la gestione dei segnali di trading basati su AI"""
+    from flask_login import current_user
+    from db_models import MLModel, SignalConfig, Dataset
+    
+    if not current_user.is_authenticated:
+        flash('Devi accedere per visualizzare i segnali di trading.', 'danger')
+        return redirect(url_for('login'))
+    
+    # Ottieni i modelli disponibili
+    ml_models = MLModel.query.filter_by(user_id=current_user.id).all()
+    
+    # Ottieni le configurazioni dei segnali
+    signal_configs = SignalConfig.query.filter_by(user_id=current_user.id).all()
+    
+    # Ottieni i dataset disponibili
+    datasets = Dataset.query.filter_by(user_id=current_user.id).all()
+    
+    return render_template('trading_signals.html', 
+                          signal_configs=signal_configs,
+                          ml_models=ml_models,
+                          datasets=datasets)
+
+@app.route('/create_signal_config', methods=['POST'])
+def create_signal_config_route():
+    """Crea una nuova configurazione di segnali di trading"""
+    from flask_login import current_user
+    from db_models import Dataset, SignalConfig
+    
+    if not current_user.is_authenticated:
+        flash('Devi accedere per creare configurazioni di segnali.', 'danger')
+        return redirect(url_for('login'))
+    
+    try:
+        # Ottieni i dati dal form
+        dataset_id = request.form.get('dataset_id', type=int)
+        timeframe = request.form.get('timeframe', '1h')
+        model_ids = request.form.getlist('model_ids')
+        risk_level = request.form.get('risk_level', type=int, default=3)
+        auto_tp_sl = 'auto_tp_sl' in request.form
+        telegram_enabled = 'telegram_enabled' in request.form
+        
+        # Verifica che il dataset esista
+        dataset = Dataset.query.get(dataset_id)
+        if not dataset:
+            flash('Dataset non trovato.', 'danger')
+            return redirect(url_for('trading_signals'))
+        
+        # Genera un ID configurazione unico
+        config_id = f"sig_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Crea la nuova configurazione
+        signal_config = SignalConfig(
+            user_id=current_user.id,
+            dataset_id=dataset_id,
+            config_id=config_id,
+            timeframe=timeframe,
+            model_ids=','.join(model_ids) if model_ids else '',
+            risk_level=risk_level,
+            auto_tp_sl=auto_tp_sl,
+            telegram_enabled=telegram_enabled,
+            is_active=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.session.add(signal_config)
+        db.session.commit()
+        
+        flash(f'Configurazione segnali "{config_id}" creata con successo!', 'success')
+        
+    except Exception as e:
+        logger.error(f"Errore durante la creazione della configurazione: {str(e)}")
+        flash(f'Errore durante la creazione della configurazione: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
+@app.route('/toggle_signal_config/<config_id>/<action>')
+def toggle_signal_config(config_id, action):
+    """Avvia o ferma una configurazione di segnali"""
+    from flask_login import current_user
+    from db_models import SignalConfig
+    
+    if not current_user.is_authenticated:
+        flash('Devi accedere per gestire le configurazioni di segnali.', 'danger')
+        return redirect(url_for('login'))
+    
+    # Verifica che la configurazione esista
+    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=current_user.id).first()
+    if not signal_config:
+        flash('Configurazione non trovata.', 'danger')
+        return redirect(url_for('trading_signals'))
+    
+    try:
+        if action == 'start':
+            # Imposta la configurazione come attiva
+            signal_config.is_active = True
+            signal_config.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            flash(f'Segnali attivati per la configurazione "{config_id}".', 'success')
+            
+            # Questo verrebbe sostituito con la vera generazione di segnali
+            # Per ora mostriamo un messaggio indicando che i segnali sono stati attivati
+            if signal_config.telegram_enabled:
+                # Invia il segnale al canale Telegram (simulato)
+                flash(f'Segnale di esempio inviato a Telegram.', 'info')
+                
+        elif action == 'stop':
+            # Imposta la configurazione come inattiva
+            signal_config.is_active = False
+            signal_config.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            flash(f'Segnali disattivati per la configurazione "{config_id}".', 'success')
+        
+    except Exception as e:
+        logger.error(f"Errore durante la gestione della configurazione: {str(e)}")
+        flash(f'Errore durante la gestione della configurazione: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
+
+@app.route('/delete_signal_config/<config_id>')
+def delete_signal_config_route(config_id):
+    """Elimina una configurazione di segnali"""
+    from flask_login import current_user
+    from db_models import SignalConfig
+    
+    if not current_user.is_authenticated:
+        flash('Devi accedere per eliminare le configurazioni di segnali.', 'danger')
+        return redirect(url_for('login'))
+    
+    # Verifica che la configurazione esista
+    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=current_user.id).first()
+    if not signal_config:
+        flash('Configurazione non trovata.', 'danger')
+        return redirect(url_for('trading_signals'))
+    
+    try:
+        db.session.delete(signal_config)
+        db.session.commit()
+        
+        flash(f'Configurazione "{config_id}" eliminata con successo.', 'success')
+        
+    except Exception as e:
+        logger.error(f"Errore durante l'eliminazione della configurazione: {str(e)}")
+        flash(f'Errore durante l\'eliminazione della configurazione: {str(e)}', 'danger')
+    
+    return redirect(url_for('trading_signals'))
 
 @app.errorhandler(404)
 def page_not_found(e):
