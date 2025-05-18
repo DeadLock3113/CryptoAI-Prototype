@@ -1993,6 +1993,7 @@ def trading_signals():
                     auto_tp_sl BOOLEAN DEFAULT 1,
                     telegram_enabled BOOLEAN DEFAULT 1,
                     is_active BOOLEAN DEFAULT 0,
+                    auto_calculate BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES user(id),
@@ -2078,6 +2079,7 @@ def create_signal_config_route():
         risk_level = request.form.get('risk_level', type=int, default=3)
         auto_tp_sl = 1 if 'auto_tp_sl' in request.form else 0
         telegram_enabled = 1 if 'telegram_enabled' in request.form else 0
+        auto_calculate = 1 if 'auto_calculate' in request.form else 0
         
         # Verifica che il dataset esista
         dataset_exists = db.session.execute(db.text(
@@ -2095,10 +2097,10 @@ def create_signal_config_route():
         db.session.execute(db.text(
             """INSERT INTO signal_config 
                (config_id, user_id, dataset_id, timeframe, model_ids, 
-                risk_level, auto_tp_sl, telegram_enabled, is_active, created_at, updated_at)
+                risk_level, auto_tp_sl, telegram_enabled, is_active, auto_calculate, created_at, updated_at)
                VALUES 
                (:config_id, :user_id, :dataset_id, :timeframe, :model_ids,
-                :risk_level, :auto_tp_sl, :telegram_enabled, 0, :created_at, :updated_at)"""
+                :risk_level, :auto_tp_sl, :telegram_enabled, 0, :auto_calculate, :created_at, :updated_at)"""
         ), {
             "config_id": config_id,
             "user_id": user.id,
