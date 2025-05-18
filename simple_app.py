@@ -94,10 +94,21 @@ db = SQLAlchemy(app)
 
 # Funzione per aggiornare lo schema del database
 def update_database_schema():
-    """Aggiorna lo schema del database con le nuove colonne."""
+    """Aggiorna lo schema del database con le nuove colonne e tabelle."""
     with app.app_context():
         # Controlla se le colonne sono già presenti
         inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        logger.info(f"Tabelle esistenti: {existing_tables}")
+        
+        # Crea tutte le tabelle se non esistono
+        try:
+            db.create_all()
+            logger.info("Tabelle create/aggiornate con successo")
+        except Exception as e:
+            logger.error(f"Errore nella creazione delle tabelle: {str(e)}")
+        
+        # Dopo aver creato le tabelle, verifichiamo le colonne
         user_columns = [col['name'] for col in inspector.get_columns('user')]
         
         # Aggiungi le colonne mancanti
