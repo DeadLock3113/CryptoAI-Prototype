@@ -350,17 +350,27 @@ def profile():
     
     if request.method == 'POST':
         # Update user information
-        username = request.form['username']
-        email = request.form['email']
+        username = request.form.get('username', user.username)
+        email = request.form.get('email', user.email)
         
         # Check if username or email is already taken (by another user)
-        if username != user.username and User.query.filter_by(username=username).first():
-            flash('Username già in uso. Scegli un altro username.', 'danger')
-            return redirect(url_for('profile'))
+        if username != user.username:
+            existing_user = db.session.execute(db.text(
+                "SELECT id FROM user WHERE username = :username AND id != :user_id"
+            ), {"username": username, "user_id": user.id}).fetchone()
             
-        if email != user.email and User.query.filter_by(email=email).first():
-            flash('Email già registrata. Utilizza un\'altra email.', 'danger')
-            return redirect(url_for('profile'))
+            if existing_user:
+                flash('Username già in uso. Scegli un altro username.', 'danger')
+                return redirect(url_for('profile'))
+            
+        if email != user.email:
+            existing_email = db.session.execute(db.text(
+                "SELECT id FROM user WHERE email = :email AND id != :user_id"
+            ), {"email": email, "user_id": user.id}).fetchone()
+            
+            if existing_email:
+                flash('Email già registrata. Utilizza un\'altra email.', 'danger')
+                return redirect(url_for('profile'))
             
         # Update user
         user.username = username
