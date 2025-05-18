@@ -1823,6 +1823,29 @@ def models():
                           selected_dataset=selected_dataset,
                           gpu_available=gpu_available)
 
+@app.route('/update_notification_settings', methods=['POST'])
+def update_notification_settings():
+    """Aggiorna le impostazioni di notifica dell'utente"""
+    if not current_user.is_authenticated:
+        flash('Devi accedere per aggiornare le impostazioni di notifica.', 'danger')
+        return redirect(url_for('login'))
+    
+    # Ottieni o crea il record delle impostazioni di notifica
+    settings = NotificationSettings.query.filter_by(user_id=current_user.id).first()
+    if not settings:
+        settings = NotificationSettings(user_id=current_user.id)
+        db.session.add(settings)
+    
+    # Aggiorna le impostazioni
+    settings.timeframe = request.form.get('timeframe', '1h')
+    settings.enabled = 'notification_enabled' in request.form
+    settings.price_change_threshold = float(request.form.get('price_change_threshold', 1.0))
+    settings.volume_change_threshold = float(request.form.get('volume_change_threshold', 20.0))
+    
+    db.session.commit()
+    flash('Impostazioni di notifica aggiornate con successo!', 'success')
+    return redirect(url_for('profile'))
+
 @app.route('/clear_data')
 def clear_data():
     """Clear session data and return to home page"""
