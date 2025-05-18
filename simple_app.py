@@ -1826,28 +1826,93 @@ def models():
 @app.route('/update_notification_settings', methods=['POST'])
 def update_notification_settings():
     """Aggiorna le impostazioni di notifica dell'utente"""
-    from db_models import NotificationSettings
-    
     # Check if user is logged in
     user = get_current_user()
     if not user:
         flash('Devi accedere per aggiornare le impostazioni di notifica.', 'danger')
         return redirect(url_for('login'))
     
-    # Ottieni o crea il record delle impostazioni di notifica
-    settings = NotificationSettings.query.filter_by(user_id=user.id).first()
-    if not settings:
-        settings = NotificationSettings(user_id=user.id)
-        db.session.add(settings)
+    try:
+        # Ottieni o crea il record delle impostazioni di notifica
+        # Prima controlliamo se la tabella notification_settings esiste
+        notification_table_exists = False
+        try:
+            result = db.session.execute(db.text("SELECT 1 FROM notification_settings LIMIT 1"))
+            notification_table_exists = True
+        except Exception as e:
+            logger.debug(f"La tabella notification_settings non esiste: {str(e)}")
+            # Creiamo la tabella se non esiste
+            db.session.execute(db.text('''
+                CREATE TABLE IF NOT EXISTS notification_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER UNIQUE NOT NULL,
+                    timeframe VARCHAR(10) DEFAULT '1h',
+                    enabled BOOLEAN DEFAULT 0,
+                    last_notification TIMESTAMP,
+                    price_change_threshold FLOAT DEFAULT 1.0,
+                    volume_change_threshold FLOAT DEFAULT 20.0,
+                    FOREIGN KEY (user_id) REFERENCES user(id)
+                )
+            '''))
+            db.session.commit()
+            notification_table_exists = True
+        
+        if notification_table_exists:
+            # Controlliamo se esiste già un record per questo utente
+            result = db.session.execute(db.text(
+                "SELECT id FROM notification_settings WHERE user_id = :user_id"
+            ), {"user_id": user.id})
+            setting_id = result.scalar()
+            
+            if setting_id:
+                # Aggiorna le impostazioni esistenti
+                timeframe = request.form.get('timeframe', '1h')
+                enabled = 1 if 'notification_enabled' in request.form else 0
+                price_threshold = float(request.form.get('price_change_threshold', 1.0))
+                volume_threshold = float(request.form.get('volume_change_threshold', 20.0))
+                
+                db.session.execute(db.text(
+                    """UPDATE notification_settings 
+                       SET timeframe = :timeframe, 
+                           enabled = :enabled, 
+                           price_change_threshold = :price_threshold,
+                           volume_change_threshold = :volume_threshold
+                       WHERE user_id = :user_id"""
+                ), {
+                    "timeframe": timeframe,
+                    "enabled": enabled, 
+                    "price_threshold": price_threshold,
+                    "volume_threshold": volume_threshold,
+                    "user_id": user.id
+                })
+            else:
+                # Crea un nuovo record
+                timeframe = request.form.get('timeframe', '1h')
+                enabled = 1 if 'notification_enabled' in request.form else 0
+                price_threshold = float(request.form.get('price_change_threshold', 1.0))
+                volume_threshold = float(request.form.get('volume_change_threshold', 20.0))
+                
+                db.session.execute(db.text(
+                    """INSERT INTO notification_settings
+                       (user_id, timeframe, enabled, price_change_threshold, volume_change_threshold)
+                       VALUES (:user_id, :timeframe, :enabled, :price_threshold, :volume_threshold)"""
+                ), {
+                    "user_id": user.id,
+                    "timeframe": timeframe,
+                    "enabled": enabled, 
+                    "price_threshold": price_threshold,
+                    "volume_threshold": volume_threshold
+                })
+            
+            db.session.commit()
+            flash('Impostazioni di notifica aggiornate con successo!', 'success')
+        else:
+            flash('Errore durante l\'aggiornamento delle impostazioni di notifica. Tabella non disponibile.', 'danger')
     
-    # Aggiorna le impostazioni
-    settings.timeframe = request.form.get('timeframe', '1h')
-    settings.enabled = 'notification_enabled' in request.form
-    settings.price_change_threshold = float(request.form.get('price_change_threshold', 1.0))
-    settings.volume_change_threshold = float(request.form.get('volume_change_threshold', 20.0))
+    except Exception as e:
+        logger.error(f"Errore durante l'aggiornamento delle impostazioni di notifica: {str(e)}")
+        flash(f'Errore durante l\'aggiornamento delle impostazioni: {str(e)}', 'danger')
     
-    db.session.commit()
-    flash('Impostazioni di notifica aggiornate con successo!', 'success')
     return redirect(url_for('profile'))
 
 @app.route('/clear_data')
@@ -1861,34 +1926,75 @@ def clear_data():
 @app.route('/trading_signals')
 def trading_signals():
     """Pagina per la gestione dei segnali di trading basati su AI"""
-    from db_models import MLModel, SignalConfig, Dataset
-    
     # Check if user is logged in
     user = get_current_user()
     if not user:
         flash('Devi accedere per visualizzare i segnali di trading.', 'danger')
         return redirect(url_for('login'))
     
-    # Ottieni i modelli disponibili
-    ml_models = MLModel.query.filter_by(user_id=user.id).all()
-    
-    # Ottieni le configurazioni dei segnali
-    signal_configs = SignalConfig.query.filter_by(user_id=user.id).all()
-    
-    # Ottieni i dataset disponibili
-    datasets = Dataset.query.filter_by(user_id=user.id).all()
-    
-    return render_template('trading_signals.html', 
-                          user_datasets=datasets,
-                          signal_configs=signal_configs,
-                          ml_models=ml_models,
-                          datasets=datasets)
+    try:
+        # Assicuriamoci che la tabella signal_config esista
+        try:
+            db.session.execute(db.text("SELECT 1 FROM signal_config LIMIT 1"))
+        except Exception as e:
+            logger.debug(f"La tabella signal_config non esiste: {str(e)}")
+            # Creiamo la tabella se non esiste
+            db.session.execute(db.text('''
+                CREATE TABLE IF NOT EXISTS signal_config (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    config_id VARCHAR(64) UNIQUE NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    model_ids TEXT NOT NULL,
+                    dataset_id INTEGER NOT NULL,
+                    timeframe VARCHAR(10) DEFAULT '1h',
+                    risk_level INTEGER DEFAULT 2,
+                    auto_tp_sl BOOLEAN DEFAULT 1,
+                    telegram_enabled BOOLEAN DEFAULT 1,
+                    is_active BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES user(id),
+                    FOREIGN KEY (dataset_id) REFERENCES dataset(id)
+                )
+            '''))
+            db.session.commit()
+        
+        # Ottieni i modelli disponibili usando SQL raw
+        ml_models_query = db.session.execute(db.text(
+            "SELECT id, name, model_type FROM ml_model WHERE user_id = :user_id"
+        ), {"user_id": user.id})
+        ml_models = [dict(row) for row in ml_models_query]
+        
+        # Ottieni le configurazioni dei segnali usando SQL raw
+        signal_configs_query = db.session.execute(db.text(
+            """SELECT sc.id, sc.config_id, sc.timeframe, sc.risk_level, 
+                      sc.auto_tp_sl, sc.telegram_enabled, sc.is_active,
+                      d.name as dataset_name
+               FROM signal_config sc
+               JOIN dataset d ON sc.dataset_id = d.id
+               WHERE sc.user_id = :user_id"""
+        ), {"user_id": user.id})
+        signal_configs = [dict(row) for row in signal_configs_query]
+        
+        # Ottieni i dataset disponibili usando SQL raw
+        datasets_query = db.session.execute(db.text(
+            "SELECT id, name, symbol FROM dataset WHERE user_id = :user_id"
+        ), {"user_id": user.id})
+        datasets = [dict(row) for row in datasets_query]
+        
+        return render_template('trading_signals.html', 
+                            user_datasets=datasets,
+                            signal_configs=signal_configs,
+                            ml_models=ml_models,
+                            datasets=datasets)
+    except Exception as e:
+        logger.error(f"Errore nella pagina dei segnali di trading: {str(e)}")
+        flash(f'Errore nel caricamento della pagina dei segnali: {str(e)}', 'danger')
+        return redirect(url_for('index'))
 
 @app.route('/create_signal_config', methods=['POST'])
 def create_signal_config_route():
     """Crea una nuova configurazione di segnali di trading"""
-    from db_models import Dataset, SignalConfig
-    
     # Check if user is logged in
     user = get_current_user()
     if not user:
@@ -1901,34 +2007,42 @@ def create_signal_config_route():
         timeframe = request.form.get('timeframe', '1h')
         model_ids = request.form.getlist('model_ids')
         risk_level = request.form.get('risk_level', type=int, default=3)
-        auto_tp_sl = 'auto_tp_sl' in request.form
-        telegram_enabled = 'telegram_enabled' in request.form
+        auto_tp_sl = 1 if 'auto_tp_sl' in request.form else 0
+        telegram_enabled = 1 if 'telegram_enabled' in request.form else 0
         
         # Verifica che il dataset esista
-        dataset = Dataset.query.get(dataset_id)
-        if not dataset:
+        dataset_exists = db.session.execute(db.text(
+            "SELECT 1 FROM dataset WHERE id = :dataset_id AND user_id = :user_id"
+        ), {"dataset_id": dataset_id, "user_id": user.id}).scalar()
+        
+        if not dataset_exists:
             flash('Dataset non trovato.', 'danger')
             return redirect(url_for('trading_signals'))
         
         # Genera un ID configurazione unico
         config_id = f"sig_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Crea la nuova configurazione
-        signal_config = SignalConfig(
-            user_id=user.id,
-            dataset_id=dataset_id,
-            config_id=config_id,
-            timeframe=timeframe,
-            model_ids=','.join(model_ids) if model_ids else '',
-            risk_level=risk_level,
-            auto_tp_sl=auto_tp_sl,
-            telegram_enabled=telegram_enabled,
-            is_active=False,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
+        # Crea la nuova configurazione con SQL raw
+        db.session.execute(db.text(
+            """INSERT INTO signal_config 
+               (config_id, user_id, dataset_id, timeframe, model_ids, 
+                risk_level, auto_tp_sl, telegram_enabled, is_active, created_at, updated_at)
+               VALUES 
+               (:config_id, :user_id, :dataset_id, :timeframe, :model_ids,
+                :risk_level, :auto_tp_sl, :telegram_enabled, 0, :created_at, :updated_at)"""
+        ), {
+            "config_id": config_id,
+            "user_id": user.id,
+            "dataset_id": dataset_id,
+            "timeframe": timeframe,
+            "model_ids": ','.join(model_ids) if model_ids else '',
+            "risk_level": risk_level,
+            "auto_tp_sl": auto_tp_sl,
+            "telegram_enabled": telegram_enabled,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
         
-        db.session.add(signal_config)
         db.session.commit()
         
         flash(f'Configurazione segnali "{config_id}" creata con successo!', 'success')
@@ -1942,8 +2056,6 @@ def create_signal_config_route():
 @app.route('/toggle_signal_config/<config_id>/<action>')
 def toggle_signal_config(config_id, action):
     """Avvia o ferma una configurazione di segnali"""
-    from db_models import SignalConfig
-    
     # Check if user is logged in
     user = get_current_user()
     if not user:
@@ -1951,30 +2063,48 @@ def toggle_signal_config(config_id, action):
         return redirect(url_for('login'))
     
     # Verifica che la configurazione esista
-    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
-    if not signal_config:
+    signal_config_exists = db.session.execute(db.text(
+        "SELECT telegram_enabled FROM signal_config WHERE config_id = :config_id AND user_id = :user_id"
+    ), {"config_id": config_id, "user_id": user.id}).first()
+    
+    if not signal_config_exists:
         flash('Configurazione non trovata.', 'danger')
         return redirect(url_for('trading_signals'))
     
     try:
         if action == 'start':
-            # Imposta la configurazione come attiva
-            signal_config.is_active = True
-            signal_config.updated_at = datetime.utcnow()
+            # Imposta la configurazione come attiva con SQL raw
+            db.session.execute(db.text(
+                """UPDATE signal_config 
+                   SET is_active = 1, updated_at = :updated_at
+                   WHERE config_id = :config_id AND user_id = :user_id"""
+            ), {
+                "updated_at": datetime.utcnow(),
+                "config_id": config_id,
+                "user_id": user.id
+            })
             db.session.commit()
             
             flash(f'Segnali attivati per la configurazione "{config_id}".', 'success')
             
             # Questo verrebbe sostituito con la vera generazione di segnali
             # Per ora mostriamo un messaggio indicando che i segnali sono stati attivati
-            if signal_config.telegram_enabled:
+            telegram_enabled = signal_config_exists[0]
+            if telegram_enabled:
                 # Invia il segnale al canale Telegram (simulato)
                 flash(f'Segnale di esempio inviato a Telegram.', 'info')
                 
         elif action == 'stop':
-            # Imposta la configurazione come inattiva
-            signal_config.is_active = False
-            signal_config.updated_at = datetime.utcnow()
+            # Imposta la configurazione come inattiva con SQL raw
+            db.session.execute(db.text(
+                """UPDATE signal_config 
+                   SET is_active = 0, updated_at = :updated_at
+                   WHERE config_id = :config_id AND user_id = :user_id"""
+            ), {
+                "updated_at": datetime.utcnow(),
+                "config_id": config_id,
+                "user_id": user.id
+            })
             db.session.commit()
             
             flash(f'Segnali disattivati per la configurazione "{config_id}".', 'success')
@@ -1988,8 +2118,6 @@ def toggle_signal_config(config_id, action):
 @app.route('/delete_signal_config/<config_id>')
 def delete_signal_config_route(config_id):
     """Elimina una configurazione di segnali"""
-    from db_models import SignalConfig
-    
     # Check if user is logged in
     user = get_current_user()
     if not user:
@@ -1997,13 +2125,19 @@ def delete_signal_config_route(config_id):
         return redirect(url_for('login'))
     
     # Verifica che la configurazione esista
-    signal_config = SignalConfig.query.filter_by(config_id=config_id, user_id=user.id).first()
-    if not signal_config:
+    signal_config_exists = db.session.execute(db.text(
+        "SELECT 1 FROM signal_config WHERE config_id = :config_id AND user_id = :user_id"
+    ), {"config_id": config_id, "user_id": user.id}).scalar()
+    
+    if not signal_config_exists:
         flash('Configurazione non trovata.', 'danger')
         return redirect(url_for('trading_signals'))
     
     try:
-        db.session.delete(signal_config)
+        # Elimina la configurazione con SQL raw
+        db.session.execute(db.text(
+            "DELETE FROM signal_config WHERE config_id = :config_id AND user_id = :user_id"
+        ), {"config_id": config_id, "user_id": user.id})
         db.session.commit()
         
         flash(f'Configurazione "{config_id}" eliminata con successo.', 'success')
